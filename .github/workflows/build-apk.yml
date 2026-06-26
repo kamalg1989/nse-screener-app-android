@@ -3,30 +3,23 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-env:
-  NODE_VERSION: 20
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: .
       
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: 20
           cache: 'npm'
       
-      - name: Install dependencies
-        run: npm ci --force
-        working-directory: ${{ github.workspace }}
+      - run: npm ci --force
       
       - uses: expo/expo-github-action@v8
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
       
-      - name: Build APK with EAS
-        run: eas build --platform android --non-interactive
-        working-directory: ${{ github.workspace }}
+      - run: eas build --platform android --non-interactive
