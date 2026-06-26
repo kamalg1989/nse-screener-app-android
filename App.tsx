@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { SettingsProvider } from './src/context/SettingsContext'
 import { HomeScreen } from './src/screens/HomeScreen'
 import { BacktestScreen } from './src/screens/BacktestScreen'
@@ -9,9 +10,10 @@ type TabType = 'home' | 'backtest' | 'results' | 'settings'
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<TabType>('home')
+  const insets = useSafeAreaInsets()
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       {/* Tab Content */}
       <View style={styles.content}>
         {activeTab === 'home' && <HomeScreen />}
@@ -25,14 +27,14 @@ function AppContent() {
         )}
       </View>
 
-      {/* Tab Bar */}
-      <View style={styles.tabBar}>
+      {/* Tab Bar with Bottom Inset Padding */}
+      <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
         <TabBarItem label="Home" icon="🏠" active={activeTab === 'home'} onPress={() => setActiveTab('home')} />
         <TabBarItem label="Backtest" icon="📊" active={activeTab === 'backtest'} onPress={() => setActiveTab('backtest')} />
         <TabBarItem label="Results" icon="📈" active={activeTab === 'results'} onPress={() => setActiveTab('results')} />
         <TabBarItem label="Settings" icon="⚙️" active={activeTab === 'settings'} onPress={() => setActiveTab('settings')} />
       </View>
-    </View>
+    </SafeAreaView>
   )
 }
 
@@ -74,7 +76,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#E0E0E0',
     backgroundColor: '#FFF',
-    paddingBottom: 4,
+    paddingTop: 4,
   },
   tab: {
     flex: 1,
