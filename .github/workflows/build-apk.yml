@@ -13,6 +13,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Debug
+        run: |
+          pwd
+          ls -la
+          git status || true
+          find . -maxdepth 2 -name package.json
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
