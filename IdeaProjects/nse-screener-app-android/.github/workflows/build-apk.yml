@@ -1,41 +1,22 @@
 name: Build & Release APK
-
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
-
 env:
   NODE_VERSION: 18
-  EAS_PROJECT_ID: 69420c5d-f4d1-4f09-9d07-d40410455578
-
 jobs:
   build:
-    name: Build APK
     runs-on: ubuntu-latest
-    
     steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
-
-      - name: 🔧 Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-
-      - name: 📦 Install dependencies
-        run: npm ci
-
-      - name: 🔐 Setup EAS credentials
-        uses: expo/expo-github-action@v8
+      - run: npm ci
+      - uses: expo/expo-github-action@v8
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
-
-      - name: 🚀 Build APK with EAS
-        run: eas build --platform android --non-interactive
-
-      - name: ✅ Build Complete
-        run: echo "APK build initiated successfully!"
+      - run: eas build --platform android --non-interactive
