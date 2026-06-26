@@ -7,25 +7,29 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ${{ github.workspace }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          path: ./src
+      
+      - name: Move to workspace root
+        run: |
+          ls -la ./src
+          cd ./src
+          ls -la
+          pwd
       
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'npm'
-          cache-dependency-path: '${{ github.workspace }}/package-lock.json'
+          cache-dependency-path: './src/package-lock.json'
       
       - name: Install dependencies
-        run: |
-          pwd
-          ls -la
-          npm ci --force
+        working-directory: ./src
+        run: npm ci --force
       
       - name: Setup Expo
         uses: expo/expo-github-action@v8
@@ -34,4 +38,5 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
       
       - name: Build APK
+        working-directory: ./src
         run: eas build --platform android --non-interactive
