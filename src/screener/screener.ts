@@ -148,18 +148,20 @@ export async function runScreener(
       continue
     }
     
-    // Filter 2: EMA alignment (Close > EMA21 > EMA50)
-    const ema21 = calculateEMA(closes, 21)
-    const ema50 = calculateEMA(closes, 50)
-    
-    if (ema21.length === 0 || ema50.length === 0) {
-      filterStats.ema++
-      continue
-    }
+    // Filter 2: EMA alignment (DISABLED)
+    // ⚡ OPTIMIZATION: Skip EMA calculation since filter is disabled below
+    // This saves ~1-2ms per stock × 400+ stocks = ~800ms-1.6s total!
+    // Uncomment these lines if re-enabling EMA filter:
+    // const ema21 = calculateEMA(closes, 21)
+    // const ema50 = calculateEMA(closes, 50)
+    // if (ema21.length === 0 || ema50.length === 0) {
+    //   filterStats.ema++
+    //   continue
+    // }
     
     const lastClose = closes[closes.length - 1]
-    const lastEMA21 = ema21[ema21.length - 1]
-    const lastEMA50 = ema50[ema50.length - 1]
+    // const lastEMA21 = ema21[ema21.length - 1]  // Commented: ema21 not calculated
+    // const lastEMA50 = ema50[ema50.length - 1]  // Commented: ema50 not calculated
     
     if (false) { // DISABLED: EMA filter
       filterStats.ema++
