@@ -1,41 +1,32 @@
 name: Build & Release APK
+
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
-      
+          cache: npm
+
       - name: Install dependencies
         run: npm ci --force
-      
-      - uses: expo/expo-github-action@v8
+
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
-      
-      - name: Debug Expo Setup
-        run: |
-          echo "=== Checking Expo CLI ==="
-          eas --version
-          eas whoami
-          echo "=== Checking project config ==="
-          cat app.json
-          echo "=== Checking eas.json ==="
-          cat eas.json
-      
-      - name: Build APK  
-        run: |
-          echo "=== Starting APK Build ==="
-          eas build --platform android --non-interactive 2>&1 | tee build.log
-          echo "=== Build Output ==="
-          tail -100 build.log
+
+      - name: Build APK
+        run: eas build --platform android --non-interactive
