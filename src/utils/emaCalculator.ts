@@ -1,37 +1,77 @@
-// Calculate EMA (Exponential Moving Average)
-export function calculateEMA(closes: number[], period: number): number[] {
-  if (closes.length < period) return []
+import { OHLC } from '../screener/screener'
 
-  const k = 2 / (period + 1)
-  const ema: number[] = []
+/**
+ * Calculate Exponential Moving Average (EMA)
+ * Returns array with same length as input (pads with undefined for values before period)
+ */
+export function calculateEMA(data: number[], period: number): (number | undefined)[] {
+  if (data.length === 0) return []
+  if (data.length < period) {
+    // Not enough data for this period - return array of undefined
+    return new Array(data.length).fill(undefined)
+  }
 
-  // SMA for first value
+  const ema: (number | undefined)[] = new Array(data.length).fill(undefined)
+  const multiplier = 2 / (period + 1)
+
+  // Calculate initial SMA
   let sum = 0
   for (let i = 0; i < period; i++) {
-    sum += closes[i]
+    sum += data[i]
   }
-  ema[period - 1] = sum / period
+  let emaValue = sum / period
+  ema[period - 1] = emaValue
 
-  // EMA for remaining values
-  for (let i = period; i < closes.length; i++) {
-    const prevEMA = ema[i - 1]
-    ema[i] = closes[i] * k + prevEMA * (1 - k)
-  }
-
-  // Fill initial values with interpolation
-  for (let i = 0; i < period - 1; i++) {
-    ema[i] = ema[period - 1] * ((i + 1) / period) + closes[i] * (1 - (i + 1) / period)
+  // Calculate EMA for remaining values
+  for (let i = period; i < data.length; i++) {
+    emaValue = data[i] * multiplier + emaValue * (1 - multiplier)
+    ema[i] = Number.isFinite(emaValue) ? emaValue : undefined
   }
 
   return ema
 }
 
-export function getEMAsForSymbol(ohlcData: any[]) {
-  const closes = ohlcData.map((d) => d.close)
-  return {
-    ema10: calculateEMA(closes, 10),
-    ema21: calculateEMA(closes, 21),
-    ema50: calculateEMA(closes, 50),
-    ema200: calculateEMA(closes, 200),
+/**
+ * Calculate multiple EMAs from close prices
+ * Returns full-length arrays with undefined padding at start
+ */
+export function calculateMultipleEMAs(ohlcData: OHLC[], periods: number[] = [10, 21, 50, 200]) {
+  if (!ohlcData || ohlcData.length === 0) {
+    return {
+      '10': [],
+      '21': [],
+      '50': [],
+      '200': [],
+    }
   }
+
+  const closePrices = ohlcData.map(candle => candle.close)
+  
+  const result: Record<number, (number | undefined)[]> = {}
+  periods.forEach(period => {
+    result[period] = calculateEMA(closePrices, period)
+  })
+
+  return result
+}
+
+/**
+ * Get EMA values for a specific index
+ */
+export function getEMAValuesAtIndex(
+  emaCalculations: Record<number, (number | undefined)[]>,
+  index: number
+): Record<number, number | null> {
+  const result: Record<number, number | null> = {}
+  
+  Object.entries(emaCalculations).forEach(([period, values]) => {
+    if (values && values.length > 0 && index < values.length) {
+      const value = values[index]
+      result[period] = (typeof value === 'number' && Number.isFinite(value)) ? value : null
+    } else {
+      result[period] = null
+    }
+  })
+
+  return result
 }

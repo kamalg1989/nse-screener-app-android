@@ -1,0 +1,103 @@
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║        📊 NSE SCREENER - MOCK DATA HARDCODING LOCATIONS (QUICK REFERENCE)     ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ FILE: src/utils/mockData.ts (PRIMARY SOURCE)                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Purpose: Generates realistic mock OHLC data                                  │
+│ Stocks:  RELIANCE(₹2150), TCS(₹3500), HDFCBANK(₹1680), ICICIBANK(₹950),    │
+│          INFY(₹1850)                                                         │
+│ Data:    750 candles per stock (630 historical + 120 future)                 │
+│ Export:  MOCK_DATA object - used as fallback                                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ FILE: src/screens/HomeScreen.tsx                                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Line 19:  useState<'real' | 'mock'>('mock')    ← DEFAULT TO MOCK             │
+│ Line 16:  import { MOCK_DATA } from '../utils/mockData'                     │
+│ Line 34:  const dataToUse = hasRealData ? realData : MOCK_DATA  ← FALLBACK   │
+│ Line 35:  setDataSource(hasRealData ? 'real' : 'mock')                       │
+│ Line 55:  setAllData(MOCK_DATA)                ← ERROR FALLBACK              │
+│ Line 71:  {dataSource === 'real' ? '📊 Real Data' : '🤖 Mock Data'}         │
+│                                                                               │
+│ Usage:   Screener results generated from mock data when real fails           │
+│ Display: Badge shows "🤖 Mock Data" when using mock                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ FILE: src/screens/BacktestScreen.tsx                                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Line 7:   import { MOCK_DATA } from '../utils/mockData'                      │
+│ Line 28:  const dataToUse = ... ? realData : MOCK_DATA  ← FALLBACK           │
+│ Line 31:  setAllData(MOCK_DATA)                ← ERROR FALLBACK              │
+│                                                                               │
+│ Usage:   Backtest engine runs on mock data when real fails                   │
+│ Feature: Tests strategies on 750 candles of mock data                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ FILE: src/screens/SettingsScreen.tsx                                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ Line 9:   useState<'real' | 'mock'>('mock')    ← DEFAULT TO MOCK             │
+│ Line 21:  if (Object.keys(realData).length > 0) { real }                     │
+│ Line 24:  else { setDataSource('mock') }       ← FALLBACK                    │
+│ Line 60:  {dataSource === 'real' ? '📊 Real NSE Data' : '🤖 Mock Data'}      │
+│                                                                               │
+│ Usage:   Displays data source stats and status                               │
+│ Feature: "Refresh Stats" button checks if real data available                │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                        HARDCODED DEFAULT VALUES                               ║
+╠═════════════════════════╦════════════════════════╦════════════════════════════╣
+║ File                    ║ Line/Value             ║ Purpose                    ║
+╠═════════════════════════╬════════════════════════╬════════════════════════════╣
+║ HomeScreen.tsx          ║ Line 19: 'mock'        ║ Start with mock data       ║
+║ BacktestScreen.tsx      ║ Line 13: '2026-01-15'  ║ Default backtest date      ║
+║ BacktestScreen.tsx      ║ Line 14: 4 weeks       ║ Test period length         ║
+║ SettingsScreen.tsx      ║ Line 9: 'mock'         ║ Start with mock status     ║
+║ mockData.ts             ║ Lines 11-15: Prices    ║ Base prices for generation ║
+╚═════════════════════════╩════════════════════════╩════════════════════════════╝
+
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                      MOCK DATA FLOW SUMMARY                                   ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+  1. Screen loads (Home/Backtest/Settings)
+     ↓
+  2. Tries to fetch real data from GitHub via realDataFetcher.ts
+     ↓
+  3a. ✅ REAL DATA LOADS → Use it, show "📊 Real Data" badge
+     ↓
+  3b. ❌ REAL DATA FAILS → Fallback to MOCK_DATA, show "🤖 Mock Data" badge
+     ↓
+  4. Use data for screener/backtest/charting
+
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                        CURRENT STATUS (2024-06-26)                           ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+  ❌ Real Data: FAILING (gzip decompression issue in React Native)
+  ✅ Mock Data: ACTIVE (750 candles per stock, 5 stocks total)
+  ✅ Fallback: WORKING (seamlessly switches to mock when real fails)
+  ✅ UI Indicators: WORKING (badge correctly shows "🤖 Mock Data")
+  
+  → Mock data is FINE for testing/development
+  → Real 500-stock data will load once fetch issue is fixed
+
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                             KEY FINDINGS                                      ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+✅ Mock data is NOT hardcoded values - it's ALGORITHMICALLY GENERATED
+✅ All 3 screens have proper fallback logic implemented
+✅ UI shows correct status badge for each data source  
+✅ Architecture is clean and maintainable
+✅ No hardcoding of specific numbers (except base prices for generation)
+
+⏳ Issue: pako gzip decompression not working in React Native fetch()
+⏳ Solution: Need to fix realDataFetcher.ts to properly handle binary data
+⏳ Workaround: Use mock data for now - it's realistic enough for testing
+

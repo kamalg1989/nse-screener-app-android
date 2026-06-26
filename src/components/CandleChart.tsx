@@ -1,5 +1,5 @@
 import React from 'react'
-import { View, Dimensions, Text as RNText } from 'react-native'
+import { View, Dimensions } from 'react-native'
 import Svg, { Line, Rect, Path, G, Text as SvgText } from 'react-native-svg'
 import { OHLC } from '../screener/screener'
 
@@ -8,10 +8,10 @@ interface CandleChartProps {
   width?: number
   height?: number
   timeframe?: 'daily' | 'weekly'
-  ema10?: number[]
-  ema21?: number[]
-  ema50?: number[]
-  ema200?: number[]
+  ema10?: (number | undefined)[]
+  ema21?: (number | undefined)[]
+  ema50?: (number | undefined)[]
+  ema200?: (number | undefined)[]
   forwardStartDate?: string
 }
 
@@ -28,13 +28,12 @@ export function CandleChart({
 }: CandleChartProps) {
   if (data.length === 0) return null
 
-  // Slice data based on timeframe
-  // Daily: last 90 candles, Weekly: all candles (already ~90 weeks)
-  const displayData = timeframe === 'daily' 
-    ? data.slice(Math.max(0, data.length - 90))
-    : data
+  // Track the starting index of displayed data in the full array
+  const displayCount = timeframe === 'daily' ? 90 : data.length
+  const startIndex = Math.max(0, data.length - displayCount)
+  const displayData = data.slice(startIndex)
 
-  // Get price range (exclude volume)
+  // Get price range
   const prices = displayData.flatMap((d) => [d.high, d.low])
   const minPrice = Math.min(...prices)
   const maxPrice = Math.max(...prices)
@@ -69,7 +68,7 @@ export function CandleChart({
     })
   }
 
-  // Date labels (X-axis) - show every Nth candle
+  // Date labels (X-axis)
   const labelInterval = Math.ceil(displayData.length / 6)
   const dateLabels = []
   for (let i = 0; i < displayData.length; i += labelInterval) {
@@ -82,12 +81,7 @@ export function CandleChart({
     })
   }
 
-  // Find forward period index
-  const forwardStartIndex = forwardStartDate 
-    ? displayData.findIndex((c) => c.date > forwardStartDate) 
-    : -1
-
-  // Render candles with volume
+  // Render candles
   const candles = displayData.map((candle, idx) => {
     const x = scaleX(idx)
     const o = scaleY(candle.open)
@@ -104,7 +98,6 @@ export function CandleChart({
 
     return (
       <G key={`candle-${idx}`}>
-        {/* Volume bar */}
         <Rect
           x={x - candleWidth / 2}
           y={padding.top + chartHeight * 0.75}
@@ -112,9 +105,7 @@ export function CandleChart({
           height={volY - (padding.top + chartHeight * 0.75)}
           fill={volumeColor}
         />
-        {/* Wick */}
         <Line x1={x} y1={h} x2={x} y2={l} stroke={candleColor} strokeWidth="0.8" />
-        {/* Body */}
         <Rect
           x={x - candleWidth / 2}
           y={bodyTop}
@@ -126,7 +117,33 @@ export function CandleChart({
     )
   })
 
-  // EMA paths
+  // EMA path builder - handles undefined values AND offset
+  const emaPath = (emaData?: (number | undefined)[]) => {
+    if (!emaData || emaData.length === 0) return ''
+    
+    const validPoints: { x: number; y: number }[] = []
+    
+    // Iterate through the DISPLAY data indices
+    for (let displayIdx = 0; displayIdx < displayData.length; displayIdx++) {
+      // Convert display index to full data index
+      const fullIdx = startIndex + displayIdx
+      
+      // Get price from full EMA array using full index
+      const price = emaData[fullIdx]
+      if (typeof price === 'number' && Number.isFinite(price)) {
+        const x = scaleX(displayIdx)
+        const y = scaleY(price)
+        validPoints.push({ x, y })
+      }
+    }
+    
+    if (validPoints.length === 0) return ''
+    
+    return validPoints
+      .map((point, idx) => `${idx === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
+      .join(' ')
+  }
+
   const emaLines = [
     { data: ema10, color: '#10B981', name: 'EMA10' },
     { data: ema21, color: '#EF4444', name: 'EMA21' },
@@ -134,23 +151,10 @@ export function CandleChart({
     { data: ema200, color: '#A855F7', name: 'EMA200' },
   ]
 
-  const emaPath = (emaData?: number[]) => {
-    if (!emaData || emaData.length === 0) return ''
-    const start = emaData.length - displayData.length
-    return emaData
-      .slice(start)
-      .map((price, idx) => {
-        const x = scaleX(idx)
-        const y = scaleY(price)
-        return `${idx === 0 ? 'M' : 'L'} ${x} ${y}`
-      })
-      .join(' ')
-  }
-
   return (
     <View style={{ width, height, backgroundColor: '#1F2937', borderRadius: 8 }}>
       <Svg width={width} height={height}>
-        {/* Background grid */}
+        {/* Grid */}
         {priceLabels.map((label, i) => (
           <Line
             key={`grid-${i}`}
@@ -190,7 +194,7 @@ export function CandleChart({
           strokeWidth="1"
         />
 
-        {/* Price labels (Y-axis) */}
+        {/* Price labels */}
         {priceLabels.map((label, i) => (
           <SvgText
             key={`price-${i}`}
@@ -204,7 +208,7 @@ export function CandleChart({
           </SvgText>
         ))}
 
-        {/* Date labels (X-axis) */}
+        {/* Date labels */}
         {dateLabels.map((label, i) => (
           <SvgText
             key={`date-${i}`}
@@ -218,22 +222,24 @@ export function CandleChart({
           </SvgText>
         ))}
 
-        {/* Candles & Volume */}
+        {/* Candles */}
         {candles}
 
-        {/* EMAs */}
+        {/* EMAs - properly aligned with display data */}
         {emaLines.map(
-          (line) =>
-            line.data && (
+          (line) => {
+            const pathStr = emaPath(line.data)
+            return pathStr ? (
               <Path
                 key={line.name}
-                d={emaPath(line.data)}
+                d={pathStr}
                 stroke={line.color}
                 strokeWidth="1.5"
                 fill="none"
                 opacity="0.8"
               />
-            )
+            ) : null
+          }
         )}
       </Svg>
     </View>

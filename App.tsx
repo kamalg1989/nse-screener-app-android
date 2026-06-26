@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
+import { SafeAreaView, SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { SettingsProvider } from './src/context/SettingsContext'
 import { HomeScreen } from './src/screens/HomeScreen'
 import { BacktestScreen } from './src/screens/BacktestScreen'
@@ -13,7 +13,15 @@ function AppContent() {
   const insets = useSafeAreaInsets()
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right', 'bottom']}>
+      {/* Top Tab Bar */}
+      <View style={[styles.tabBar, styles.topTabBar]}>
+        <TabBarItem label="Home" icon="🏠" active={activeTab === 'home'} onPress={() => setActiveTab('home')} />
+        <TabBarItem label="Backtest" icon="📊" active={activeTab === 'backtest'} onPress={() => setActiveTab('backtest')} />
+        <TabBarItem label="Results" icon="📈" active={activeTab === 'results'} onPress={() => setActiveTab('results')} />
+        <TabBarItem label="Settings" icon="⚙️" active={activeTab === 'settings'} onPress={() => setActiveTab('settings')} />
+      </View>
+
       {/* Tab Content */}
       <View style={styles.content}>
         {activeTab === 'home' && <HomeScreen />}
@@ -25,14 +33,6 @@ function AppContent() {
             <Text style={styles.placeholderSubtext}>Coming Soon...</Text>
           </View>
         )}
-      </View>
-
-      {/* Tab Bar with Bottom Inset Padding */}
-      <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
-        <TabBarItem label="Home" icon="🏠" active={activeTab === 'home'} onPress={() => setActiveTab('home')} />
-        <TabBarItem label="Backtest" icon="📊" active={activeTab === 'backtest'} onPress={() => setActiveTab('backtest')} />
-        <TabBarItem label="Results" icon="📈" active={activeTab === 'results'} onPress={() => setActiveTab('results')} />
-        <TabBarItem label="Settings" icon="⚙️" active={activeTab === 'settings'} onPress={() => setActiveTab('settings')} />
       </View>
     </SafeAreaView>
   )
@@ -59,9 +59,11 @@ function TabBarItem({
 
 export default function App() {
   return (
-    <SettingsProvider>
-      <AppContent />
-    </SettingsProvider>
+    <SafeAreaProvider>
+      <SettingsProvider>
+        <AppContent />
+      </SettingsProvider>
+    </SafeAreaProvider>
   )
 }
 
@@ -73,20 +75,22 @@ const styles = StyleSheet.create({
   placeholderSubtext: { fontSize: 12, color: '#999' },
   tabBar: {
     flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
     backgroundColor: '#FFF',
-    paddingTop: 4,
+    paddingVertical: 4,
+  },
+  topTabBar: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
   },
   tab: {
     flex: 1,
     paddingVertical: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    borderTopWidth: 3,
-    borderTopColor: 'transparent',
+    borderBottomWidth: 3,
+    borderBottomColor: 'transparent',
   },
-  activeTab: { borderTopColor: '#007AFF', backgroundColor: '#F8F9FF' },
+  activeTab: { borderBottomColor: '#007AFF', backgroundColor: '#F8F9FF' },
   tabIcon: { fontSize: 18, marginBottom: 2 },
   tabLabel: { fontSize: 9, color: '#999', fontWeight: '600' },
   activeTabLabel: { color: '#007AFF' },

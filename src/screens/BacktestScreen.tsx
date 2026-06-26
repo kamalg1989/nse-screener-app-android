@@ -5,7 +5,10 @@ import { useSettings } from '../context/SettingsContext'
 import { fetchAllStockData, DEFAULT_SYMBOLS } from '../utils/realDataFetcher'
 import { MOCK_DATA } from '../utils/mockData'
 import { runBacktest } from '../utils/backtestEngine'
-import { CandleChart } from '../components/CandleChart'
+import { CandleChartInteractive as CandleChart } from '../components/CandleChartInteractive'
+import { calculateMultipleEMAs } from '../utils/emaCalculator'
+import { aggregateToWeekly } from '../utils/weeklyAggregator'
+import { OHLC } from '../screener/screener'
 
 export function BacktestScreen() {
   const { settings } = useSettings()
@@ -14,9 +17,12 @@ export function BacktestScreen() {
   const [loading, setLoading] = useState(false)
   const [results, setResults] = useState<any>(null)
   const [allData, setAllData] = useState<Record<string, any>>({})
+  const [emaCalculations, setEmaCalculations] = useState<Record<string, any>>({})
+  const [weeklyData, setWeeklyData] = useState<Record<string, OHLC[]>>({})
   const [showForwardChart, setShowForwardChart] = useState(false)
   const [selectedForwardStock, setSelectedForwardStock] = useState<string | null>(null)
   const [forwardChartData, setForwardChartData] = useState<any>(null)
+  const [chartTimeframe, setChartTimeframe] = useState<'daily' | 'weekly'>('daily')
 
   useEffect(() => {
     loadData()
@@ -27,6 +33,18 @@ export function BacktestScreen() {
       const realData = await fetchAllStockData(DEFAULT_SYMBOLS)
       const dataToUse = Object.keys(realData).length > 0 ? realData : MOCK_DATA
       setAllData(dataToUse)
+
+      // Calculate EMAs and weekly data for all symbols
+      const emaCalcs: Record<string, any> = {}
+      const weeklyDatas: Record<string, OHLC[]> = {}
+      
+      Object.entries(dataToUse).forEach(([symbol, dailyCandles]) => {
+        emaCalcs[symbol] = calculateMultipleEMAs(dailyCandles as OHLC[])
+        weeklyDatas[symbol] = aggregateToWeekly(dailyCandles as OHLC[])
+      })
+      
+      setEmaCalculations(emaCalcs)
+      setWeeklyData(weeklyDatas)
     } catch (error) {
       console.log('Error loading data:', error)
       setAllData(MOCK_DATA)
@@ -61,7 +79,31 @@ export function BacktestScreen() {
     setSelectedForwardStock(symbol)
     if (allData[symbol]) {
       setForwardChartData(allData[symbol])
+      setChartTimeframe('daily')
       setShowForwardChart(true)
+    }
+  }
+
+  const getChartDataForTimeframe = () => {
+    if (!selectedForwardStock) return []
+    
+    if (chartTimeframe === 'daily') {
+      return forwardChartData || []
+    } else {
+      return weeklyData[selectedForwardStock] || []
+    }
+  }
+
+  const getEMAForTimeframe = (emaKey: string) => {
+    if (!selectedForwardStock) return undefined
+    
+    if (chartTimeframe === 'daily') {
+      return emaCalculations[selectedForwardStock]?.[emaKey]
+    } else {
+      // Calculate EMAs for weekly data
+      const weeklyChartData = weeklyData[selectedForwardStock] || []
+      const weeklyEmaCals = calculateMultipleEMAs(weeklyChartData)
+      return weeklyEmaCals[emaKey]
     }
   }
 
@@ -173,17 +215,79 @@ export function BacktestScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Timeframe Toggle */}
+          <View style={styles.timeframeToggle}>
+            <TouchableOpacity
+              style={[
+                styles.timeframeBtn,
+                chartTimeframe === 'daily' && styles.timeframeActive,
+              ]}
+              onPress={() => setChartTimeframe('daily')}
+            >
+              <Text
+                style={[
+                  styles.timeframeBtnText,
+                  chartTimeframe === 'daily' && styles.timeframeActiveText,
+                ]}
+              >
+                📊 Daily
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.timeframeBtn,
+                chartTimeframe === 'weekly' && styles.timeframeActive,
+              ]}
+              onPress={() => setChartTimeframe('weekly')}
+            >
+              <Text
+                style={[
+                  styles.timeframeBtnText,
+                  chartTimeframe === 'weekly' && styles.timeframeActiveText,
+                ]}
+              >
+                📈 Weekly
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <ScrollView style={styles.modalContent}>
             {forwardChartData && forwardChartData.length > 0 && (
-              <View style={styles.chartContainer}>
-                <CandleChart
-                  data={forwardChartData}
-                  width={360}
-                  height={300}
-                  timeframe="daily"
-                  forwardStartDate={backTestDate}
-                />
-              </View>
+              <>
+                <View style={styles.chartContainer}>
+                  <CandleChart
+                    data={getChartDataForTimeframe()}
+                    width={360}
+                    height={300}
+                    timeframe={chartTimeframe}
+                    ema10={getEMAForTimeframe('10')}
+                    ema21={getEMAForTimeframe('21')}
+                    ema50={getEMAForTimeframe('50')}
+                    ema200={getEMAForTimeframe('200')}
+                    forwardStartDate={backTestDate}
+                  />
+                </View>
+
+                {/* EMA Legend */}
+                <View style={styles.legend}>
+                  <View style={styles.legendRow}>
+                    <View style={[styles.legendColor, { backgroundColor: '#10B981' }]} />
+                    <Text style={styles.legendText}>EMA 10 (Green)</Text>
+                  </View>
+                  <View style={styles.legendRow}>
+                    <View style={[styles.legendColor, { backgroundColor: '#EF4444' }]} />
+                    <Text style={styles.legendText}>EMA 21 (Red)</Text>
+                  </View>
+                  <View style={styles.legendRow}>
+                    <View style={[styles.legendColor, { backgroundColor: '#3B82F6' }]} />
+                    <Text style={styles.legendText}>EMA 50 (Blue)</Text>
+                  </View>
+                  <View style={styles.legendRow}>
+                    <View style={[styles.legendColor, { backgroundColor: '#A855F7' }]} />
+                    <Text style={styles.legendText}>EMA 200 (Purple)</Text>
+                  </View>
+                </View>
+              </>
             )}
           </ScrollView>
         </View>
@@ -223,6 +327,15 @@ const styles = StyleSheet.create({
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#EEE' },
   modalTitle: { fontSize: 14, fontWeight: 'bold' },
   closeBtn: { fontSize: 16, fontWeight: 'bold', color: '#007AFF' },
+  timeframeToggle: { flexDirection: 'row', marginHorizontal: 12, marginVertical: 12, backgroundColor: '#F0F0F0', borderRadius: 8, padding: 4 },
+  timeframeBtn: { flex: 1, paddingVertical: 8, paddingHorizontal: 12, alignItems: 'center', borderRadius: 6 },
+  timeframeActive: { backgroundColor: '#007AFF' },
+  timeframeBtnText: { fontSize: 11, fontWeight: '600', color: '#666' },
+  timeframeActiveText: { color: '#FFF' },
   modalContent: { flex: 1, padding: 12 },
   chartContainer: { backgroundColor: '#FFF', borderRadius: 8, marginBottom: 12, alignItems: 'center' },
+  legend: { backgroundColor: '#F8F9FF', padding: 12, borderRadius: 8, marginBottom: 12 },
+  legendRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 4 },
+  legendColor: { width: 12, height: 12, borderRadius: 2, marginRight: 8 },
+  legendText: { fontSize: 10, color: '#333' },
 })
