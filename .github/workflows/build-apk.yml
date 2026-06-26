@@ -23,5 +23,19 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
       
-      - name: Build APK
-        run: eas build --platform android --non-interactive
+      - name: Debug Expo Setup
+        run: |
+          echo "=== Checking Expo CLI ==="
+          eas --version
+          eas whoami
+          echo "=== Checking project config ==="
+          cat app.json
+          echo "=== Checking eas.json ==="
+          cat eas.json
+      
+      - name: Build APK  
+        run: |
+          echo "=== Starting APK Build ==="
+          eas build --platform android --non-interactive 2>&1 | tee build.log
+          echo "=== Build Output ==="
+          tail -100 build.log
