@@ -37,19 +37,26 @@ export function HomeScreen() {
 
   const loadScreener = async () => {
     setLoading(true)
+    const startTime = Date.now()
+    const timings: Record<string, number> = {}
+    
     try {
       logInfo('Screener: Loading data', { source: 'Home' })
       
-      // Fetch real data, fallback to mock
+      // STEP 1: Fetch real data
+      const fetchStartTime = Date.now()
       const realData = await fetchAllStockData(DEFAULT_SYMBOLS)
+      timings.fetch = Date.now() - fetchStartTime
+      
       const hasRealData = Object.keys(realData).length > 0
       const dataToUse = realData
       
       setDataSource(hasRealData ? 'real' : 'mock')
       setAllData(dataToUse)
-      logInfo('Data loaded', { hasRealData, symbols: Object.keys(dataToUse).length })
+      logInfo('Data loaded', { hasRealData, symbols: Object.keys(dataToUse).length, fetchTime: `${timings.fetch}ms` })
 
-      // Calculate EMAs and weekly data for all symbols
+      // STEP 2: Calculate EMAs and weekly data
+      const emaStartTime = Date.now()
       const emaCalcs: Record<string, any> = {}
       const weeklyDatas: Record<string, OHLC[]> = {}
       
@@ -57,12 +64,14 @@ export function HomeScreen() {
         emaCalcs[symbol] = calculateMultipleEMAs(dailyCandles as OHLC[])
         weeklyDatas[symbol] = aggregateToWeekly(dailyCandles as OHLC[])
       })
+      timings.ema = Date.now() - emaStartTime
       
       setEmaCalculations(emaCalcs)
       setWeeklyData(weeklyDatas)
-      logDebug('EMA and weekly data calculated', { symbols: Object.keys(emaCalcs).length })
+      logDebug('EMA and weekly data calculated', { symbols: Object.keys(emaCalcs).length, emaTime: `${timings.ema}ms` })
 
-      // Run actual screener
+      // STEP 3: Run screener
+      const screenerStartTime = Date.now()
       const results = await runScreener(dataToUse, {
         minLiquidity: settings.minLiquidity,
         emaFast: settings.emaFast,
@@ -70,8 +79,10 @@ export function HomeScreen() {
         emaSlow: settings.emaSlow,
         minRiskRewardRatio: settings.minRiskRewardRatio,
       })
-
-      // FIX: Correct field names - screener returns: entry, sl, target, rr (NOT entryPrice, stopLoss, riskRewardRatio)
+      timings.screener = Date.now() - screenerStartTime
+      
+      // STEP 4: Convert and display
+      const displayStartTime = Date.now()
       const opps: Opportunity[] = results
         .map(r => ({
           symbol: r.symbol,
@@ -81,15 +92,29 @@ export function HomeScreen() {
           rr: r.rr || 0,
         }))
         .slice(0, 5)
+      timings.display = Date.now() - displayStartTime
+      timings.total = Date.now() - startTime
 
       setOpportunities(opps)
-      logInfo('Screener complete', { opportunities: opps.length })
+      
+      // Print detailed metrics
+      console.log('\n📊 ═══════════════════════════════════════')
+      console.log('📊 PERFORMANCE METRICS')
+      console.log('📊 ═══════════════════════════════════════')
+      console.log(`📊 1. Data Fetch:      ${timings.fetch.toString().padStart(5)}ms`)
+      console.log(`📊 2. EMA Calc:        ${timings.ema.toString().padStart(5)}ms`)
+      console.log(`📊 3. Screener:        ${timings.screener.toString().padStart(5)}ms`)
+      console.log(`📊 4. Display:         ${timings.display.toString().padStart(5)}ms`)
+      console.log('📊 ───────────────────────────────────────')
+      console.log(`📊 ⏱️  TOTAL TIME:        ${timings.total.toString().padStart(5)}ms (${(timings.total / 1000).toFixed(2)}s)`)
+      console.log('📊 ═══════════════════════════════════════\n')
+      
+      logInfo('Screener complete', { opportunities: opps.length, totalTime: `${timings.total}ms`, metrics: timings })
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logError('Screener failed', error as Error, { dataSource })
       
       setDataSource('mock')
-      
       setOpportunities([])
       
       Alert.alert(

@@ -130,11 +130,11 @@ async function fetchWithRetry(
   return { symbol, data: [] }
 }
 
-// Parallel fetching with concurrency limit (6 concurrent - safe for GitHub, faster)
+// Parallel fetching with concurrency limit (8 concurrent - balanced speed vs safety)
 async function fetchWithConcurrency(
   symbols: string[],
   purpose: "screening" | "weekly_chart" = "screening",
-  concurrency: number = 6  // Increased to 6 for faster parallel fetch
+  concurrency: number = 8  // OPTIMIZED: 6 → 8 for speed, 20 → 8 for safety
 ): Promise<Record<string, OHLC[]>> {
   const result: Record<string, OHLC[]> = {}
   let successCount = 0
@@ -142,7 +142,7 @@ async function fetchWithConcurrency(
 
   for (let i = 0; i < symbols.length; i += concurrency) {
     const batch = symbols.slice(i, i + concurrency)
-    console.log(`[FETCH] Batch ${Math.floor(i / concurrency) + 1}/${Math.ceil(symbols.length / concurrency)}: ${batch.length} symbols`)
+    console.log(`[FETCH] Batch ${Math.floor(i / concurrency) + 1}/${Math.ceil(symbols.length / concurrency)}: ${batch.length} symbols (concurrency: ${concurrency})`)
 
     const promises = batch.map(sym => fetchWithRetry(sym, purpose))
     const batchResults = await Promise.all(promises)
@@ -158,9 +158,9 @@ async function fetchWithConcurrency(
 
     console.log(`[PROGRESS] ${successCount} loaded, ${errorCount} failed (${i + concurrency}/${symbols.length})`)
 
-    // Small delay between batches to avoid rate limiting
+    // Balanced delay (8 concurrent is safe, can use 75ms)
     if (i + concurrency < symbols.length) {
-      await new Promise(r => setTimeout(r, 100))
+      await new Promise(r => setTimeout(r, 75))  // Mid-ground between 50ms (too fast) and 100ms
     }
   }
 
@@ -172,8 +172,30 @@ export async function fetchAllStockData(
   symbols: string[],
   purpose: "screening" | "weekly_chart" = "screening"
 ): Promise<Record<string, OHLC[]>> {
-  console.log(`[DEBUG] Starting parallel fetch of ${symbols.length} symbols for ${purpose}...`)
-  return fetchWithConcurrency(symbols, purpose, 6)  // Use 6 concurrent - still safe for GitHub
+  const fetchStartTime = Date.now()
+  console.log(`[TIMER] Starting parallel fetch of ${symbols.length} symbols for ${purpose}... (8-concurrent BALANCED)`)
+  
+  const result = await fetchWithConcurrency(symbols, purpose, 8)  // OPTIMIZED: 8-concurrent (safe + fast)
+  
+  const fetchEndTime = Date.now()
+  const totalTime = fetchEndTime - fetchStartTime
+  const successCount = Object.keys(result).length
+  const failureCount = symbols.length - successCount
+  const throughput = (successCount / (totalTime / 1000)).toFixed(1)
+  
+  console.log('\n📊 ═══════════════════════════════════════')
+  console.log('📊 DATA FETCH METRICS (8-CONCURRENT)')
+  console.log('📊 ═══════════════════════════════════════')
+  console.log(`📊 Total symbols:      ${symbols.length}`)
+  console.log(`📊 Successful:         ${successCount}`)
+  console.log(`📊 Failed:             ${failureCount}`)
+  console.log(`📊 ─────────────────────────────────────`)
+  console.log(`📊 ⏱️  TOTAL TIME:        ${totalTime}ms (${(totalTime / 1000).toFixed(2)}s)`)
+  console.log(`📊 Throughput:         ${throughput} symbols/sec`)
+  console.log(`📊 Avg per symbol:     ${(totalTime / successCount).toFixed(0)}ms`)
+  console.log('📊 ═══════════════════════════════════════\n')
+  
+  return result
 }
 
 export const DEFAULT_SYMBOLS = ["360ONE", "3MINDIA", "AADHARHFC", "AARTIIND", "AAVAS", "ABB", "ABBOTINDIA", "ABCAPITAL", "ABDL", "ABFRL", "ABLBL", "ABREL", "ABSLAMC", "ACC", "ACE", "ACMESOLAR", "ACUTAAS", "ADANIENSOL", "ADANIENT", "ADANIGREEN", "ADANIPORTS", "ADANIPOWER", "AEGISLOG", "AEGISVOPAK", "AFCONS", "AFFLE", "AIAENG", "AIIL", "AJANTPHARM", "ALKEM", "AMBER", "AMBUJACEM", "ANANDRATHI", "ANANTRAJ", "ANGELONE", "ANTHEM", "ANURAS", "APARINDS", "APLAPOLLO", "APOLLOHOSP", "APOLLOTYRE", "APTUS", "ARCHEXP", "ARCHIDPLY", "ARNDL", "ASAHIINDIA", "ASHOKLEY", "ASIANPAINT", "ASTERDM", "ASTRAL", "ATGL", "ATHERENERG", "ATUL", "AUBANK", "AUROPHARMA", "AWL", "AXISBANK", "BAJAJ-AUTO", "BAJAJFINSV", "BAJAJHFL", "BAJAJHLDNG", "BAJFINANCE", "BALKRISIND", "BALRAMCHIN", "BANDHANBNK", "BANKBARODA", "BANKINDIA", "BATAINDIA", "BAYERCROP", "BBTC", "BDL", "BEL", "BELRISE", "BEML", "BERGEPAINT", "BHARATFORG", "BHARTIARTL", "BHARTIHEXA", "BHEL", "BIKAJI", "BIOCON", "BLS", "BLUEDART", "BLUEJET", "BLUESTARCO", "BOSCHLTD", "BPCL", "BRIGADE", "BRITANNIA", "BSE", "BSOFT", "CAMS", "CANBK", "CANFINHOME", "CANHLIFE", "CAPLIPOINT", "CARBORUNIV", "CARTRADE", "CASTROLIND", "CCL", "CDSL", "CEATLTD", "CEMPRO", "CENTRALBK", "CESC", "CGCL", "CGPOWER", "CHALET", "CHAMBLFERT", "CHENNPETRO", "CHOICEIN", "CHOLAFIN", "CHOLAHLDNG", "CIEINDIA", "CIPLA", "CLEAN", "COALINDIA", "COCHINSHIP", "COFORGE", "COHANCE", "COLPAL", "CONCOR", "CONCORDBIO", "COROMANDEL", "CPPLUS", "CRAFTSMAN", "CREDITACC", "CRISIL", "CROMPTON", "CUB", "CUMMINSIND", "CYIENT", "DABUR", "DALBHARAT", "DATAPATTNS", "DCMSHRIRAM", "DEEPAKFERT", "DEEPAKNTR", "DELHIVERY", "DEVYANI", "DIVISLAB", "DIXON", "DLF", "DMART", "DOMS", "DRREDDY", "ECLERX", "EICHERMOT", "EIDPARRY", "EIHOTEL", "ELECON", "ELGIEQUIP", "EMAMILTD", "EMCURE", "EMMVEE", "ENDURANCE", "ENGINERSIN", "ENRIN", "ERIS", "ESCORTS", "ETERNAL", "EXIDEIND", "FACT", "FEDERALBNK", "FINCABLES", "FIRSTCRY", "FIVESTAR", "FLUOROCHEM", "FORCEMOT", "FORTIS", "FSL", "GABRIEL", "GAIL", "GALLANTT", "GESHIP", "GICRE", "GILLETTE", "GLAND", "GLAXO", "GLENMARK", "GMDCLTD", "GMRAIRPORT", "GODFRYPHLP", "GODIGIT", "GODREJCP", "GODREJIND", "GODREJPROP", "GPIL", "GRANULES", "GRAPHITE", "GRASIM", "GRAVITA", "GROWW", "GRSE", "GVTVD", "HAL", "HAVELLS", "HBLENGINE", "HCLTECH", "HDBFS", "HDFCAMC", "HDFCBANK", "HDFCLIFE", "HEG", "HEROMOTOCO", "HEXT", "HFCL", "HINDALCO", "HINDCOPPER", "HINDPETRO", "HINDUNILVR", "HINDZINC", "HOMEFIRST", "HONASA", "HONAUT", "HSCL", "HUDCO", "HYUNDAI", "ICICIAMC", "ICICIBANK", "ICICIGI", "ICICIPRULI", "IDBI", "IDEA", "IDFCFIRSTB", "IEX", "IFCI", "IGIL", "IGL", "IIFL", "IKS", "INDGN", "INDHOTEL", "INDIACEM", "INDIAMART", "INDIANB", "INDIGO", "INDUSINDBK", "INDUSTOWER", "INFY", "INOXWIND", "INTELLECT", "IOB", "IOC", "IPCALAB", "IRB", "IRCON", "IRCTC", "IREDA", "IRFC", "ITC", "ITCHOTELS", "ITI", "JKBANK", "JAINREC", "JBCHEPHARM", "JBMA", "JINDALSAW", "JINDALSTEL", "JIOFIN", "JKCEMENT", "JKTYRE", "JMFINANCIL", "JPPOWER", "JSL", "JSWCEMENT", "JSWDULUX", "JSWENERGY", "JSWINFRA", "JSWSTEEL", "JUBLFOOD", "JUBLINGREA", "JUBLPHARMA", "JWL", "JYOTICNC", "KAJARIACER", "KALYANKJIL", "KARURVYSYA", "KAYNES", "KEC", "KEI", "KFINTECH", "KIMS", "KIRLOSENG", "KOTAKBANK", "KPIL", "KPITTECH", "KPRMILL", "LALPATHLAB", "LATENTVIEW", "LAURUSLABS", "LEMONTREE", "LENSKART", "LGEINDIA", "LICHSGFIN", "LICI", "LINDEINDIA", "LLOYDSME", "LODHA", "LT", "LTF", "LTFOODS", "LTM", "LTTS", "LUPIN", "LUXIND", "MMFIN", "MAHABANK", "MANAPPURAM", "MANKIND", "MAPMYINDIA", "MARICO", "MARUTI", "MAXHEALTH", "MAZDOCK", "MCX", "MEDANTA", "MEESHO", "MFSL", "MGL", "MINDACORP", "MMTC", "MOTHERSON", "MOTILALOFS", "MPHASIS", "MRF", "MRPL", "MSUMI", "MUTHOOTFIN", "NAM-INDIA", "NATCOPHARM", "NATIONALUM", "NAUKRI", "NAVA", "NAVINFLUOR", "NBCC", "NCC", "NESTLEIND", "NETWEB", "NEULANDLAB", "NEWGEN", "NH", "NHPC", "NIACL", "NIVABUPA", "NLCINDIA", "NMDC", "NSLNISP", "NTPC", "NTPCGREEN", "NUVAMA", "NUVOCO", "NYKAA", "OBEROIRLTY", "OFSS", "OIL", "OLAELEC", "OLECTRA", "ONESOURCE", "ONGC", "PAGEIND", "PARADEEP", "PATANJALI", "PAYTM", "PCBL", "PERSISTENT", "PETRONET", "PFC", "PFIZER", "PGEL", "PHOENIXLTD", "PIDILITIND", "PIIND", "PINELABS", "PIRAMALFIN", "PNB", "PNBHOUSING", "POLICYBZR", "POLYCAB", "POLYMED", "POONAWALLA", "POWERGRID", "POWERINDIA", "PPLPHARMA", "PREMIERENE", "PRESTIGE", "PTCIL", "PVRINOX", "PWL", "RADICO", "RAILTEL", "RAINBOW", "RAMCOCEM", "RBLBANK", "RECLTD", "REDINGTON", "RELIANCE", "RHIM", "RITES", "RKFORGE", "RPOWER", "RRKABEL", "RVNL", "SAGILITY", "SAIL", "SAILIFE", "SAMMAANCAP", "SAPPHIRE", "SARDAEN", "SAREGAMA", "SBFC", "SBICARD", "SBILIFE", "SBIN", "SCHAEFFLER", "SCHNEIDER", "SCI", "SHREECEM", "SHRIRAMFIN", "SHYAMMETL", "SIEMENS", "SIGNATURE", "SJVN", "SOBHA", "SOLARINDS", "SONACOMS", "SONATSOFTW", "SPLPETRO", "SRF", "STARHEALTH", "SUMICHEM", "SUNDARMFIN", "SUNPHARMA", "SUNTV", "SUPREMEIND", "SUZLON", "SWANCORP", "SWIGGY", "SYNGENE", "SYRMA", "TARIL", "TATACAP", "TATACHEM", "TATACOMM", "TATACONSUM", "TATAELXSI", "TATAINVEST", "TATAPOWER", "TATASTEEL", "TATATECH", "TBOTEK", "TCS", "TECHM", "TECHNOE", "TEGA", "TEJASNET", "TENNIND", "THELEELA", "THERMAX", "TIINDIA", "TIMKEN", "TITAGARH", "TITAN", "TMCV", "TMPV", "TORNTPHARM", "TORNTPOWER", "TRAVELFOOD", "TRENT", "TRIDENT", "TRITURBINE", "TTML", "TVSMOTOR", "UBL", "UCOBANK", "ULTRACEMCO", "UNIONBANK", "UNITDSPR", "UNOMINDA", "UPL", "URBANCO", "USHAMART", "UTIAMC", "VAML", "VBL", "VEDL", "VEDPOWER", "VIJAYA", "VISL", "VMM", "VOGL", "VOLTAS", "VTL", "WAAREEENER", "WELCORP", "WELSPUNLIV", "WHIRLPOOL", "WIPRO", "WOCKPHARMA", "YESBANK", "ZEEL", "ZENSARTECH", "ZENTEC", "ZFCVINDIA", "ZYDUSLIFE", "ZYDUSWELL"]
