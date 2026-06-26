@@ -1,0 +1,10 @@
+.Trash
+.Trash/
+**/.Trash
+**/.DS_Store
+node_modules/
+.expo/
+.env
+.env.local
+android/build/
+android/.gradle/

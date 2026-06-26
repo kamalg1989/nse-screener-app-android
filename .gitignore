@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+.expo/
+.npm/
+yarn-error.log
+
+# Testing
+coverage/
+.nyc_output/
+
+# Production
+dist/
+build/
+
+# Misc
+.DS_Store
+*.log
+*.swp
+*.swo
+*~
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Android
+android/.gradle/
+android/local.properties
+android/build/
+
+# iOS
+ios/Pods/
+ios/Podfile.lock
+
+# Expo
+.expo/
+.expo-shared/
+
+# Next/Nuxt
+.next/
+.nuxt/
+dist/
+out/
