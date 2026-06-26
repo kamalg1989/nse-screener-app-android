@@ -3,7 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, Activi
 import Slider from '@react-native-community/slider'
 import { useSettings } from '../context/SettingsContext'
 import { fetchAllStockData, DEFAULT_SYMBOLS } from '../utils/realDataFetcher'
-import { MOCK_DATA } from '../utils/mockData'
+
 import { runBacktest } from '../utils/backtestEngine'
 import { CandleChartInteractive as CandleChart } from '../components/CandleChartInteractive'
 import { calculateMultipleEMAs } from '../utils/emaCalculator'
@@ -31,7 +31,7 @@ export function BacktestScreen() {
   const loadData = async () => {
     try {
       const realData = await fetchAllStockData(DEFAULT_SYMBOLS)
-      const dataToUse = Object.keys(realData).length > 0 ? realData : MOCK_DATA
+      const dataToUse = realData
       setAllData(dataToUse)
 
       // Calculate EMAs and weekly data for all symbols
@@ -47,7 +47,7 @@ export function BacktestScreen() {
       setWeeklyData(weeklyDatas)
     } catch (error) {
       console.log('Error loading data:', error)
-      setAllData(MOCK_DATA)
+      
     }
   }
 

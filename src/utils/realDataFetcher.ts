@@ -1,26 +1,20 @@
-import pako from 'pako'
+// @ts-ignore
+const pako = require('pako')
 import { OHLC } from '../screener/screener'
 
 const GITHUB_DATA_URL = 'https://raw.githubusercontent.com/kamalg1989/nse-market-data/main/data'
 
 function convertArrayToOHLC(rows: any[][]): OHLC[] {
-  return rows.map(row => ({
-    date: row[0],
-    open: row[1],
-    high: row[2],
-    low: row[3],
-    close: row[4],
-    volume: row[5]
-  }))
-}
-
-function base64ToUint8Array(base64: string): Uint8Array {
-  const binaryString = atob(base64)
-  const bytes = new Uint8Array(binaryString.length)
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i)
-  }
-  return bytes
+  return rows.map(row => (
+    {
+      date: row[0],
+      open: row[1],
+      high: row[2],
+      low: row[3],
+      close: row[4],
+      volume: row[5]
+    }
+  ))
 }
 
 export async function fetchRealStockData(symbol: string): Promise<OHLC[]> {
@@ -28,52 +22,79 @@ export async function fetchRealStockData(symbol: string): Promise<OHLC[]> {
     const url = `${GITHUB_DATA_URL}/${symbol}.json.gz`
     console.log(`[DEBUG] Fetching: ${url}`)
 
-    const response = await fetch(url, { timeout: 8000 })
-    console.log(`[DEBUG] Response status: ${response.status}`)
-    
-    if (!response.ok) {
-      console.log(`[DEBUG] Failed: HTTP ${response.status}`)
-      return []
-    }
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 8000)
 
-    const text = await response.text()
-    console.log(`[DEBUG] Response size: ${text.length} bytes`)
-    
-    if (!text || text.length < 50) {
-      console.log(`[DEBUG] Response too small`)
-      return []
-    }
-
-    console.log(`[DEBUG] Decompressing gzip...`)
-    let decompressed: any
     try {
-      const binaryData = base64ToUint8Array(text)
-      decompressed = pako.inflate(binaryData, { to: 'string' })
-      console.log(`[DEBUG] Decompressed successfully: ${decompressed.length} chars`)
-    } catch (e) {
-      console.log(`[DEBUG] Base64 decode failed, trying direct decompression...`)
-      decompressed = pako.inflate(text, { to: 'string' })
-    }
+      const response = await fetch(url, { signal: controller.signal })
+      clearTimeout(timeoutId)
+      
+      if (!response.ok) {
+        console.log(`[DEBUG] Failed: HTTP ${response.status}`)
+        return []
+      }
 
-    if (!decompressed || decompressed.length < 10) {
-      console.log(`[DEBUG] Decompressed data too small`)
+      const arrayBuffer = await response.arrayBuffer()
+      console.log(`[DEBUG] Response size: ${arrayBuffer.byteLength} bytes`)
+      
+      if (!arrayBuffer || arrayBuffer.byteLength < 50) {
+        console.log(`[DEBUG] Response too small`)
+        return []
+      }
+
+      console.log(`[DEBUG] Decompressing gzip...`)
+      
+      let decompressed: string = ''
+      try {
+        const uint8Array = new Uint8Array(arrayBuffer)
+        const inflated = pako.inflate(uint8Array)
+        const decoder = new TextDecoder('utf-8')
+        decompressed = decoder.decode(inflated)
+        console.log(`[DEBUG] Decompressed: ${decompressed.length} chars`)
+      } catch (e) {
+        console.log(`[DEBUG] Decompression failed: ${e}`)
+        return []
+      }
+
+      if (!decompressed || decompressed.length < 10) {
+        console.log(`[DEBUG] Decompressed data too small`)
+        return []
+      }
+
+      // Remove BOM if present
+      let cleanJson = decompressed
+      if (cleanJson.charCodeAt(0) === 0xFEFF) {
+        cleanJson = cleanJson.slice(1)
+      }
+      cleanJson = cleanJson.trim()
+      
+      // FIX: Replace NaN with null (NaN is not valid JSON)
+      cleanJson = cleanJson.replace(/\bNaN\b/g, 'null')
+      console.log(`[DEBUG] Cleaned NaN values`)
+
+      let data: any[][]
+      try {
+        data = JSON.parse(cleanJson)
+        console.log(`✓ ${symbol}: ${data.length} candles LOADED`)
+      } catch (parseErr: any) {
+        console.log(`[DEBUG] JSON Parse failed: ${parseErr.message}`)
+        return []
+      }
+      
+      if (!Array.isArray(data) || data.length === 0) {
+        console.log(`[DEBUG] No data after parsing`)
+        return []
+      }
+
+      const ohlcData = convertArrayToOHLC(data)
+      return ohlcData
+    } catch (fetchError) {
+      clearTimeout(timeoutId)
+      console.log(`⚠️  ${symbol} ERROR: ${fetchError}`)
       return []
     }
-
-    const data = JSON.parse(decompressed) as any[][]
-    console.log(`[DEBUG] Parsed JSON: ${data.length} rows`)
-    
-    if (!Array.isArray(data) || data.length === 0) {
-      console.log(`[DEBUG] Data not array or empty`)
-      return []
-    }
-
-    const ohlcData = convertArrayToOHLC(data)
-    console.log(`✓ ${symbol}: ${ohlcData.length} candles LOADED (Real Data!)`)
-    return ohlcData
   } catch (error) {
-    console.log(`⚠️ ${symbol} ERROR: ${error}`)
-    console.log(`⚠️ ${symbol} not available, using mock data`)
+    console.log(`⚠️  ${symbol} ERROR: ${error}`)
     return []
   }
 }

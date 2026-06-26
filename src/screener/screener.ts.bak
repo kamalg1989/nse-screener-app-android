@@ -118,7 +118,7 @@ export async function runScreener(
     MIN_VOLUME_BARS: 20,
     EMA_PERIOD: settings.emaFast,
     ATR_PERIOD: 14,
-    ATR_MULTIPLIER: settings.atrMultiplier || 2.0,
+    ATR_MULTIPLIER: settings.atrMultiplier,
     BASE_SL_PCT: 0.92,
     TRAIL_PROFIT_LOCK: 0.5,
     MIN_LTP_BUFFER: 0.05,
@@ -161,7 +161,7 @@ export async function runScreener(
     const lastEMA21 = ema21[ema21.length - 1]
     const lastEMA50 = ema50[ema50.length - 1]
     
-    if (false) { // DISABLED: EMA filter
+    if (!(lastClose > lastEMA21 && lastEMA21 > lastEMA50)) {
       filterStats.ema++
       continue
     }

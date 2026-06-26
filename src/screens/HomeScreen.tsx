@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { View, Text, ScrollView, TouchableOpacity, Modal, StyleSheet, ActivityIndicator, FlatList, Alert } from 'react-native'
 import { useSettings } from '../context/SettingsContext'
 import { fetchAllStockData, DEFAULT_SYMBOLS } from '../utils/realDataFetcher'
-import { MOCK_DATA } from '../utils/mockData'
+
 import { CandleChartInteractive as CandleChart } from '../components/CandleChartInteractive'
 import { runScreener } from '../screener/screener'
 import { calculateMultipleEMAs } from '../utils/emaCalculator'
@@ -43,7 +43,7 @@ export function HomeScreen() {
       // Fetch real data, fallback to mock
       const realData = await fetchAllStockData(DEFAULT_SYMBOLS)
       const hasRealData = Object.keys(realData).length > 0
-      const dataToUse = hasRealData ? realData : MOCK_DATA
+      const dataToUse = realData
       
       setDataSource(hasRealData ? 'real' : 'mock')
       setAllData(dataToUse)
@@ -89,12 +89,12 @@ export function HomeScreen() {
       logError('Screener failed', error as Error, { dataSource })
       
       setDataSource('mock')
-      setAllData(MOCK_DATA)
+      
       setOpportunities([])
       
       Alert.alert(
         '⚠️ Screener Error',
-        `${errorMsg}\n\nFalling back to mock data`,
+        `${errorMsg}`,
         [{ text: 'OK' }]
       )
     } finally {
