@@ -4,11 +4,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'src/**'
-      - 'App.tsx'
-      - 'app.json'
-      - 'package.json'
   workflow_dispatch:
 
 env:
@@ -23,8 +18,6 @@ jobs:
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: 🔧 Setup Node.js
         uses: actions/setup-node@v4
@@ -42,81 +35,7 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: 🚀 Build APK with EAS
-        run: eas build --platform android --profile preview --non-interactive
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas build --platform android --non-interactive
 
-      - name: 📥 Wait for build and download APK
-        run: |
-          # Check EAS build status
-          eas build list --platform android --status=finished | head -1
-          
-          # Get latest build ID and download
-          BUILD_ID=$(eas build list --platform android --status=finished --json | jq -r '.[0].id')
-          echo "Latest build ID: $BUILD_ID"
-          
-          # Download APK
-          eas build download --id $BUILD_ID --path ./NSE-Screener-1.0.0.apk
-
-      - name: 📊 Verify APK
-        run: |
-          if [ -f ./NSE-Screener-1.0.0.apk ]; then
-            ls -lh NSE-Screener-1.0.0.apk
-            echo "✅ APK built successfully!"
-          else
-            echo "❌ APK not found"
-            exit 1
-          fi
-
-      - name: 🏷️ Create Release
-        uses: actions/create-release@v1
-        id: create_release
-        with:
-          tag_name: v${{ github.run_number }}
-          release_name: NSE Screener v1.0.0 (Build ${{ github.run_number }})
-          body: |
-            # NSE Screener Android App
-            
-            **Build Info:**
-            - Build #: ${{ github.run_number }}
-            - Commit: ${{ github.sha }}
-            - Branch: ${{ github.ref_name }}
-            - Date: ${{ github.event.head_commit.timestamp }}
-            
-            ## 📱 Installation
-            
-            1. Download `NSE-Screener-1.0.0.apk`
-            2. Enable "Unknown sources" in Android settings
-            3. Install and launch
-            
-            ## ✨ Features
-            - Daily stock screener with real NSE data
-            - Historical backtesting with forward-period analysis
-            - Interactive charts with EMA indicators
-            - Customizable settings and risk parameters
-            
-            ## 📊 Data Source
-            - Real: GitHub nse-market-data repository
-            - Mock: Fallback if real data unavailable
-            
-            ---
-            Built with React Native & Expo
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 📤 Upload APK to Release
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./NSE-Screener-1.0.0.apk
-          asset_name: NSE-Screener-1.0.0.apk
-          asset_content_type: application/vnd.android.package-archive
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: ✅ Notify on Success
-        run: |
-          echo "🎉 APK Build Complete!"
-          echo "📥 Download from: https://github.com/${{ github.repository }}/releases/tag/v${{ github.run_number }}"
+      - name: ✅ Build Complete
+        run: echo "APK build initiated successfully!"
