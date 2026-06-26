@@ -71,14 +71,14 @@ export function HomeScreen() {
         minRiskRewardRatio: settings.minRiskRewardRatio,
       })
 
-      // Convert to opportunities format
+      // FIX: Correct field names - screener returns: entry, sl, target, rr (NOT entryPrice, stopLoss, riskRewardRatio)
       const opps: Opportunity[] = results
         .map(r => ({
           symbol: r.symbol,
-          entry: r.entryPrice || 0,
-          sl: r.stopLoss || 0,
+          entry: r.entry || 0,
+          sl: r.sl || 0,
           target: r.target || 0,
-          rr: r.riskRewardRatio || 0,
+          rr: r.rr || 0,
         }))
         .slice(0, 5)
 
