@@ -48,15 +48,33 @@ function createWeeklyCandle(weekData: OHLC[], weekStartDate: string): OHLC {
   const opens = weekData.map(c => c.open)
   const highs = weekData.map(c => c.high)
   const lows = weekData.map(c => c.low)
-  const closes = weekData.map(c => c.close)
+  const closes = weekData.map(c => Number.isFinite(c.close) ? c.close : c.high) // Fallback to high if close is NaN
   const volumes = weekData.map(c => c.volume)
+
+  // Find first valid open
+  let firstOpen = opens[0]
+  for (const o of opens) {
+    if (Number.isFinite(o)) {
+      firstOpen = o
+      break
+    }
+  }
+
+  // Get last valid close
+  let lastClose = closes[closes.length - 1]
+  for (let i = closes.length - 1; i >= 0; i--) {
+    if (Number.isFinite(closes[i])) {
+      lastClose = closes[i]
+      break
+    }
+  }
 
   return {
     date: weekStartDate,
-    open: opens[0],
+    open: firstOpen,
     high: Math.max(...highs),
     low: Math.min(...lows),
-    close: closes[closes.length - 1],
+    close: lastClose,
     volume: volumes.reduce((a, b) => a + b, 0),
   }
 }

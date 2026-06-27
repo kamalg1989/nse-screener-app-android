@@ -78,6 +78,37 @@ export function HomeScreen() {
         emaMid: settings.emaMid,
         emaSlow: settings.emaSlow,
         minRiskRewardRatio: settings.minRiskRewardRatio,
+        atrMultiplier: settings.atrMultiplier,
+        // PHASE 1: Entry Techniques
+        enableHHHL: settings.enableHHHL,
+        enableInsideBar: settings.enableInsideBar,
+        enablePinBar: settings.enablePinBar,
+        enableTrendBar: settings.enableTrendBar,
+        enablePullback: settings.enablePullback,
+        enableBreakout: settings.enableBreakout,
+        trendBarCloseThreshold: settings.trendBarCloseThreshold,
+        pinBarMaxBodyPct: settings.pinBarMaxBodyPct,
+        pinBarMinWickPct: settings.pinBarMinWickPct,
+        minBarRangePct: settings.minBarRangePct,
+        entryTickOffset: settings.entryTickOffset,
+        // PHASE 1: Technical Filter
+        enableEMA50Check: settings.enableEMA50Check,
+        enableSMA200Check: settings.enableSMA200Check,
+        trendMode: settings.trendMode,
+        maxBaseRange: settings.maxBaseRange,
+        volMultiplier: settings.volMultiplier,
+        baseRangeCheckBars: settings.baseRangeCheckBars,
+        // PHASE 2: Base Quality
+        enableBaseQuality: settings.enableBaseQuality,
+        minPriorUpmove: settings.minPriorUpmove,
+        maxGiveback: settings.maxGiveback,
+        maxVolumeDryup: settings.maxVolumeDryup,
+        maxDistanceFromHigh: settings.maxDistanceFromHigh,
+        // PHASE 2: IFP
+        enableIFP: settings.enableIFP,
+        ifpLookback: settings.ifpLookback,
+        ifpMinScore: settings.ifpMinScore,
+        ifpVolSurgeMultiple: settings.ifpVolSurgeMultiple,
       })
       timings.screener = Date.now() - screenerStartTime
       

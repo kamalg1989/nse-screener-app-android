@@ -1,27 +1,45 @@
 /**
- * MONTHLY DATA FETCHER
+ * MONTHLY DATA FETCHER - ULTRA OPTIMIZED
  * 
- * Fetches consolidated monthly stock data from GitHub
- * Data format: monthly/YYYY-MM.json.gz containing all 504 stocks
- * 10x faster than individual stock fetches (3-5s vs 25-50s)
+ * 1. Limit concurrent fetches (network contention reduction)
+ * 2. Counting sort for dates (O(n) instead of O(n log n))
+ * 3. AsyncStorage cache (skip fetch if exists)
  */
 
 const pako = require('pako')
 import { OHLC } from '../screener/screener'
+import { cache } from './dataCache'
 
 const GITHUB_MONTHLY_URL = 'https://raw.githubusercontent.com/kamalg1989/nse-market-data/main/monthly'
 
 interface MonthlyStockData {
-  [symbol: string]: any[][]  // Each stock: [date, open, high, low, close, volume]
+  [symbol: string]: any[][]
 }
 
+interface MonthMetrics {
+  month: string
+  fetchTime: number
+  decompressTime: number
+  parseTime: number
+  totalTime: number
+  dataSize: number
+  stockCount: number
+  cached: boolean
+}
+
+
+
 // =============================================
-// HELPERS
+// PERFORMANCE HELPERS
 // =============================================
 
 /**
- * Convert array format [date, o, h, l, c, v] to OHLC objects
+ * Convert date string to sortable integer (YYYYMMDD format)
  */
+function dateToNum(dateStr: string): number {
+  return parseInt(dateStr.replace(/-/g, ''), 10)
+}
+
 function convertArrayToOHLC(rows: any[][]): OHLC[] {
   return rows.map(row => ({
     date: row[0],
@@ -34,14 +52,81 @@ function convertArrayToOHLC(rows: any[][]): OHLC[] {
 }
 
 /**
- * Get last N months in YYYY-MM format, ending on a specific date
- * @param n - Number of months
- * @param endDate - End date (YYYY-MM-DD format), defaults to today
+ * Ultra-fast dedup using counting sort (O(n) time)
  */
+function dedupAndSortFast(candles: OHLC[]): OHLC[] {
+  if (candles.length === 0) return []
+  
+  // Dedup using Map
+  const seen = new Map<number, OHLC>()
+  for (const candle of candles) {
+    const dateNum = dateToNum(candle.date)
+    if (!seen.has(dateNum)) {
+      seen.set(dateNum, candle)
+    }
+  }
+  
+  // Convert to array and get min/max dates for counting sort
+  const unique = Array.from(seen.values())
+  if (unique.length <= 1) return unique
+  
+  // Get date range
+  let minDate = Infinity, maxDate = -Infinity
+  const dateNums = unique.map(c => {
+    const num = dateToNum(c.date)
+    minDate = Math.min(minDate, num)
+    maxDate = Math.max(maxDate, num)
+    return num
+  })
+  
+  // Counting sort by date
+  const count = maxDate - minDate + 1
+  const buckets: OHLC[] = []
+  
+  // Group by date
+  const groups = new Map<number, OHLC>()
+  unique.forEach((candle, idx) => {
+    groups.set(dateNums[idx], candle)
+  })
+  
+  // Extract in sorted order
+  for (let date = minDate; date <= maxDate; date++) {
+    if (groups.has(date)) {
+      buckets.push(groups.get(date)!)
+    }
+  }
+  
+  return buckets
+}
+
+/**
+ * Limited concurrency fetcher (max 3 concurrent requests)
+ */
+class ConcurrencyLimiter {
+  private running = 0
+  private queue: Array<() => Promise<any>> = []
+  private maxConcurrent: number
+
+  constructor(max: number = 3) {
+    this.maxConcurrent = max
+  }
+
+  async run<T>(fn: () => Promise<T>): Promise<T> {
+    while (this.running >= this.maxConcurrent) {
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    
+    this.running++
+    try {
+      return await fn()
+    } finally {
+      this.running--
+    }
+  }
+}
+
 function getLastNMonths(n: number = 3, endDate?: string): string[] {
   const months: string[] = []
-  
-  // Parse end date or use today
   const end = endDate ? new Date(endDate) : new Date()
   
   for (let i = 0; i < n; i++) {
@@ -55,164 +140,207 @@ function getLastNMonths(n: number = 3, endDate?: string): string[] {
 }
 
 // =============================================
-// MAIN FETCH LOGIC
+// FETCH LOGIC WITH CACHING + CONCURRENCY LIMIT
 // =============================================
 
-/**
- * Fetch a single month's consolidated stock data
- * 
- * @param monthKey - Month in YYYY-MM format (e.g., "2026-06")
- * @returns MonthlyStockData {symbol: [...candles...]} or null if failed
- */
-async function fetchMonthFile(monthKey: string): Promise<MonthlyStockData | null> {
+async function fetchMonthFile(
+  monthKey: string,
+  limiter: ConcurrencyLimiter
+): Promise<{data: MonthlyStockData | null, metrics: MonthMetrics}> {
+  const monthStart = Date.now()
+  let fetchTime = 0, decompressTime = 0, parseTime = 0
+  let dataSize = 0, stockCount = 0, cached = false
+  
   try {
-    const url = `${GITHUB_MONTHLY_URL}/${monthKey}.json.gz`
-    console.log(`[DEBUG] Fetching month: ${monthKey}`)
-
-    const response = await fetch(url)
-
-    if (!response.ok) {
-      console.warn(`[WARN] Month ${monthKey} not found (${response.status})`)
-      return null
+    // Check cache first
+    const cacheKey = `market_data_${monthKey}`
+    const cachedData = await cache.get<MonthlyStockData>(cacheKey)
+    if (cachedData) {
+      cached = true
+      stockCount = Object.keys(cachedData).length
+      const totalTime = Date.now() - monthStart
+      return {
+        data: cachedData,
+        metrics: { month: monthKey, fetchTime: 0, decompressTime: 0, parseTime: 0, totalTime, dataSize: 0, stockCount, cached: true }
+      }
     }
 
-    // React Native doesn't auto-decompress gzip, use arrayBuffer + pako
-    console.log(`[DEBUG] Reading response as arrayBuffer...`)
-    const arrayBuffer = await response.arrayBuffer()
-    console.log(`[DEBUG] Array buffer size: ${arrayBuffer.byteLength} bytes`)
+    console.log(`[⏱️  MONTH START] ${monthKey}`)
+
+    // Fetch with concurrency limit
+    let response: Response
+    await limiter.run(async () => {
+      const fetchStart = Date.now()
+      const url = `${GITHUB_MONTHLY_URL}/${monthKey}.json.gz`
+      response = await fetch(url)
+      fetchTime = Date.now() - fetchStart
+    })
+
+    if (!response!.ok) {
+      console.warn(`[WARN] Month ${monthKey} not found (${response!.status})`)
+      return {
+        data: null,
+        metrics: { month: monthKey, fetchTime, decompressTime, parseTime, totalTime: fetchTime, dataSize: 0, stockCount: 0, cached: false }
+      }
+    }
+
+    // Decompress
+    const decompressStart = Date.now()
+    const arrayBuffer = await response!.arrayBuffer()
+    dataSize = arrayBuffer.byteLength
     
     if (arrayBuffer.byteLength < 10) {
-      console.warn(`[WARN] Response too small for month ${monthKey} (${arrayBuffer.byteLength} bytes)`)
-      return null
+      return {
+        data: null,
+        metrics: { month: monthKey, fetchTime, decompressTime: 0, parseTime: 0, totalTime: fetchTime, dataSize, stockCount: 0, cached: false }
+      }
     }
 
-    // Decompress with pako
-    console.log(`[DEBUG] Decompressing gzip with pako.inflate()...`)
     const decompressed = pako.inflate(new Uint8Array(arrayBuffer))
-    
-    // Convert Uint8Array to string using TextDecoder
     const decoder = new TextDecoder('utf-8')
     const jsonText = decoder.decode(decompressed)
-    console.log(`[DEBUG] Decompressed: ${jsonText.length} chars`)
+    decompressTime = Date.now() - decompressStart
+    
+    console.log(`[⏱️  FETCH] ${monthKey}: ${fetchTime}ms + DECOMP: ${decompressTime}ms (${jsonText.length} chars)`)
 
     if (!jsonText || jsonText.length < 10) {
-      console.warn(`[WARN] Decompressed data too small for month ${monthKey}`)
-      return null
+      return {
+        data: null,
+        metrics: { month: monthKey, fetchTime, decompressTime, parseTime: 0, totalTime: fetchTime + decompressTime, dataSize, stockCount: 0, cached: false }
+      }
     }
 
-    // Parse JSON - handle NaN values (2026-06 data has NaN for some close prices)
-    console.log(`[DEBUG] About to parse JSON, type: ${typeof jsonText}, length: ${jsonText?.length}`);    
-    let data: MonthlyStockData;
+    // Parse
+    const parseStart = Date.now()
+    let data: MonthlyStockData
     try {
-      // Replace NaN with null (NaN is not valid JSON)
-      const sanitized = jsonText.replace(/NaN/g, 'null');
+      const sanitized = jsonText.replace(/NaN/g, 'null')
       data = JSON.parse(sanitized) as MonthlyStockData
     } catch (parseError) {
-      console.warn(`[WARN] JSON parse failed, trying trim: ${parseError}`);
-      // Try trimming in case there are encoding issues
-      const trimmed = jsonText.trim().replace(/NaN/g, 'null');
-      data = JSON.parse(trimmed) as MonthlyStockData;
+      const trimmed = jsonText.trim().replace(/NaN/g, 'null')
+      data = JSON.parse(trimmed) as MonthlyStockData
     }
+    parseTime = Date.now() - parseStart
     
-    const stockCount = Object.keys(data).length
-    console.log(`✓ Month ${monthKey}: ${stockCount} stocks loaded`)
+    stockCount = Object.keys(data).length
+    const totalTime = Date.now() - monthStart
+    
+    console.log(`[✅ PARSE] ${monthKey}: ${parseTime}ms | Total: ${totalTime}ms | Stocks: ${stockCount}`)
 
-    return data
+    // Cache for 24 hours
+    await cache.set(cacheKey, data, 24 * 60 * 60 * 1000)
+
+    return {
+      data,
+      metrics: { month: monthKey, fetchTime, decompressTime, parseTime, totalTime, dataSize, stockCount, cached: false }
+    }
   } catch (error) {
-    console.warn(`[WARN] Error fetching month ${monthKey}: ${error}`)
-    return null
+    const totalTime = Date.now() - monthStart
+    console.warn(`[❌ ERROR] Month ${monthKey}: ${error} (${totalTime}ms)`)
+    return {
+      data: null,
+      metrics: { month: monthKey, fetchTime, decompressTime, parseTime, totalTime, dataSize, stockCount: 0, cached: false }
+    }
   }
 }
 
 // =============================================
-// PUBLIC API
+// PUBLIC API - ULTRA OPTIMIZED
 // =============================================
 
-/**
- * Fetch last N months of data for all stocks
- * 
- * @param symbols - Optional: only include these symbols. If empty, include all.
- * @param monthsToFetch - Number of months to fetch (default: 3 = ~90 days)
- * @param endDate - End date for data fetch (YYYY-MM-DD format, defaults to today)
- * @returns Record<symbol, OHLC[]> with deduped, sorted candles
- */
 export async function fetchAllStockData(
   symbols: string[] = [],
-  monthsToFetch: number = 3,
+  monthsToFetch: number = 14,
   endDate?: string
 ): Promise<Record<string, OHLC[]>> {
-  console.log(`[TIMER] Starting monthly fetch: ${monthsToFetch} months for ${symbols.length || 'all'} stocks, endDate: ${endDate || 'today'}`)
+  const globalStart = Date.now()
+  console.log(`\n🚀 [FETCH START] ${monthsToFetch} months, endDate: ${endDate || 'today'}`)
 
   const months = getLastNMonths(monthsToFetch, endDate)
-  console.log(`[DEBUG] Months to fetch: ${months.join(', ')}`)
+  console.log(`[MONTHS] ${months.join(' | ')}`)
 
+  // === FETCH WITH LIMITED CONCURRENCY ===
+  const parallelStart = Date.now()
+  const limiter = new ConcurrencyLimiter(3) // Max 3 concurrent requests
+  
+  const monthPromises = months.map(month => fetchMonthFile(month, limiter))
+  const results = await Promise.all(monthPromises)
+  const parallelTime = Date.now() - parallelStart
+  
+  const monthDataList = results.map(r => r.data)
+  const monthMetrics = results.map(r => r.metrics)
+  
+  console.log(`[⏱️  PARALLEL] All fetches completed in ${parallelTime}ms`)
+  
+  console.log(`\n📊 [MONTH BREAKDOWN]`)
+  monthMetrics.forEach(m => {
+    console.log(`  ${m.month}: ${m.fetchTime}ms + ${m.decompressTime}ms + ${m.parseTime}ms = ${m.totalTime}ms (${m.stockCount} stocks)`)
+  })
+
+  // === MERGE ===
+  const mergeStart = Date.now()
   const result: Record<string, OHLC[]> = {}
-
-  // Fetch all months in parallel
-  console.log(`[DEBUG] Fetching ${months.length} month files in PARALLEL with concurrent decompression...`)
-  const monthPromises = months.map(month => fetchMonthFile(month))
-  const monthDataList = await Promise.all(monthPromises)
-  console.log(`[DEBUG] All ${months.length} months fetched and decompressed in parallel ✓`)
-
-  // Merge all months
-  console.log(`[DEBUG] Merging ${months.length} months...`)
   let successCount = 0
+
   for (const monthData of monthDataList) {
     if (!monthData) continue
     successCount++
 
     for (const [symbol, candles] of Object.entries(monthData)) {
-      // Filter by requested symbols (if provided)
-      if (symbols.length > 0 && !symbols.includes(symbol)) {
-        continue
-      }
+      if (symbols.length > 0 && !symbols.includes(symbol)) continue
 
-      // Convert array format to OHLC objects
       const ohlcCandles = convertArrayToOHLC(candles)
 
-      // Initialize if needed
       if (!result[symbol]) {
         result[symbol] = []
       }
 
-      // Append candles
       result[symbol].push(...ohlcCandles)
     }
   }
+  
+  const mergeTime = Date.now() - mergeStart
+  console.log(`[⏱️  MERGE] ${mergeTime}ms`)
 
-  // Deduplicate by date and sort
-  console.log(`[DEBUG] Deduplicating and sorting ${Object.keys(result).length} stocks...`)
-  for (const symbol in result) {
-    const uniqueDates = new Set<string>()
-    const uniqueCandles: OHLC[] = []
+  // === ULTRA-FAST DEDUP & SORT ===
+  const dedupStart = Date.now()
+  let totalCandlesBefore = 0, totalCandlesAfter = 0, totalRemoved = 0
 
-    for (const candle of result[symbol]) {
-      if (!uniqueDates.has(candle.date)) {
-        uniqueDates.add(candle.date)
-        uniqueCandles.push(candle)
-      }
-    }
-
-    // Sort by date ascending (oldest first)
-    uniqueCandles.sort((a, b) => a.date.localeCompare(b.date))
-    result[symbol] = uniqueCandles
+  const symbolBatches = Object.keys(result)
+  const batchSize = 100
+  
+  for (let i = 0; i < symbolBatches.length; i += batchSize) {
+    const batch = symbolBatches.slice(i, Math.min(i + batchSize, symbolBatches.length))
+    
+    batch.forEach(symbol => {
+      totalCandlesBefore += result[symbol].length
+      result[symbol] = dedupAndSortFast(result[symbol]) // Fast sort
+      totalCandlesAfter += result[symbol].length
+    })
   }
+  
+  totalRemoved = totalCandlesBefore - totalCandlesAfter
+  const dedupTime = Date.now() - dedupStart
+  console.log(`[⏱️  DEDUP] ${dedupTime}ms (FAST SORT) - ${totalCandlesBefore} → ${totalCandlesAfter}`)
 
-  const fetchEndTime = Date.now()
+  // === METRICS ===
+  const globalTime = Date.now() - globalStart
   const totalStocks = Object.keys(result).length
+  const nonCachedMonths = monthMetrics.filter(m => !m.cached)
+  const avgFetchTime = nonCachedMonths.length > 0 ? nonCachedMonths.reduce((sum, m) => sum + m.fetchTime, 0) / nonCachedMonths.length : 0
 
-  console.log(`
-📊 ═══════════════════════════════════════
-📊 DATA FETCH METRICS (MONTHLY)
-📊 ═══════════════════════════════════════
-📊 Months fetched:     ${months.length}
-📊 HTTP requests:      ${months.length} (vs ${symbols.length || 500} individual)
-📊 Successful:         ${successCount}
-📊 Unique stocks:      ${totalStocks}
-📊 ─────────────────────────────────────
-📊 Throughput:         ${totalStocks > 0 ? ((totalStocks * 20) / 5).toFixed(1) : '0'} stocks/sec
-📊 Improvement:        10x faster ⚡
-📊 ═══════════════════════════════════════`)
+  console.log(`\n⚡ [PERFORMANCE SUMMARY]`)
+  console.log(`╔════════════════════════════════════════════════════════╗`)
+  console.log(`║ TOTAL TIME: ${globalTime}ms (${(globalTime/1000).toFixed(1)}s)`)
+  console.log(`║ ─────────────────────────────────────────────────────`)
+  console.log(`║ Fetch (avg):        ${avgFetchTime.toFixed(0)}ms`)
+  console.log(`║ Merge:              ${mergeTime}ms`)
+  console.log(`║ Dedup/Sort (FAST):  ${dedupTime}ms`)
+  console.log(`║ ─────────────────────────────────────────────────────`)
+  console.log(`║ Stocks:  ${totalStocks}`)
+  console.log(`║ Candles: ${totalCandlesAfter}`)
+  console.log(`║ Throughput: ${(totalCandlesAfter / globalTime * 1000).toFixed(0)} candles/sec`)
+  console.log(`╚════════════════════════════════════════════════════════╝\n`)
 
   return result
 }

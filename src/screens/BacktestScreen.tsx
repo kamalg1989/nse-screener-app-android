@@ -382,14 +382,23 @@ export function BacktestScreen() {
                     <View style={[styles.legendColor, { backgroundColor: '#EF4444' }]} />
                     <Text style={styles.legendText}>EMA 21 (Red)</Text>
                   </View>
-                  <View style={styles.legendRow}>
-                    <View style={[styles.legendColor, { backgroundColor: '#3B82F6' }]} />
-                    <Text style={styles.legendText}>EMA 50 (Blue)</Text>
-                  </View>
-                  <View style={styles.legendRow}>
-                    <View style={[styles.legendColor, { backgroundColor: '#A855F7' }]} />
-                    <Text style={styles.legendText}>EMA 200 (Purple)</Text>
-                  </View>
+                  {chartTimeframe === 'daily' && (
+                    <>
+                      <View style={styles.legendRow}>
+                        <View style={[styles.legendColor, { backgroundColor: '#3B82F6' }]} />
+                        <Text style={styles.legendText}>EMA 50 (Blue)</Text>
+                      </View>
+                      <View style={styles.legendRow}>
+                        <View style={[styles.legendColor, { backgroundColor: '#A855F7' }]} />
+                        <Text style={styles.legendText}>EMA 200 (Purple)</Text>
+                      </View>
+                    </>
+                  )}
+                  {chartTimeframe === 'weekly' && (
+                    <View style={styles.legendRow}>
+                      <Text style={[styles.legendText, { color: '#999', fontStyle: 'italic' }]}>⚠️ EMA 50/200 require 50+ candles (not enough weekly data)</Text>
+                    </View>
+                  )}
                 </View>
               </>
             )}

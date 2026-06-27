@@ -189,6 +189,15 @@ export function CandleChartInteractive({
     { data: ema200, color: '#A855F7', name: 'EMA200' },
   ]
 
+  // Find end date separator position
+  let endDateX: number | null = null
+  if (forwardStartDate) {
+    const endDateIndex = displayData.findIndex(d => d.date === forwardStartDate)
+    if (endDateIndex >= 0) {
+      endDateX = scaleX(endDateIndex)
+    }
+  }
+
   // Handle tap to show tooltip
   const handleChartPress = (event: GestureResponderEvent) => {
     const { locationX } = event.nativeEvent
@@ -342,6 +351,33 @@ export function CandleChartInteractive({
                 strokeDasharray="4,4"
                 opacity="0.9"
               />
+            </>
+          )}
+
+          {/* End date separator - CYAN DASHED (marks backtest vs forward period) */}
+          {endDateX !== null && (
+            <>
+              <Line
+                x1={endDateX}
+                y1={padding.top}
+                x2={endDateX}
+                y2={padding.top + chartHeight}
+                stroke="#06B6D4"
+                strokeWidth="2.5"
+                strokeDasharray="5,5"
+                opacity="0.7"
+              />
+              {/* Label for end date */}
+              <SvgText
+                x={endDateX}
+                y={padding.top + 15}
+                fontSize="9"
+                fill="#06B6D4"
+                fontWeight="bold"
+                textAnchor="middle"
+              >
+                📍 {forwardStartDate}
+              </SvgText>
             </>
           )}
         </Svg>
