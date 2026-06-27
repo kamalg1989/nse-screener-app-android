@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { View, Dimensions, Text, StyleSheet, GestureResponderEvent } from 'react-native'
-import Svg, { Line, Rect, Path, G, Text as SvgText, Circle } from 'react-native-svg'
+import Svg, { Line, Rect, Path, G, Text as SvgText, Circle, Defs, ClipPath } from 'react-native-svg'
 import { OHLC } from '../screener/screener'
 
 interface CandleChartProps {
@@ -39,7 +39,8 @@ export function CandleChartInteractive({
   if (data.length === 0) return null
 
   // Track the starting index of displayed data in the full array
-  const displayCount = timeframe === 'daily' ? 90 : data.length
+  // Daily: show last 90 candles, Weekly: show ALL aggregated candles (no trim)
+  const displayCount = timeframe === 'daily' ? Math.min(90, data.length) : data.length
   const startIndex = Math.max(0, data.length - displayCount)
   const displayData = data.slice(startIndex)
 
@@ -56,13 +57,44 @@ export function CandleChartInteractive({
   const padding = { left: 50, right: 20, top: 20, bottom: 40 }
   const chartWidth = width - padding.left - padding.right
   const chartHeight = height - padding.top - padding.bottom
-  const candleWidth = Math.max(chartWidth / displayData.length - 1, 1.5)
+  
+  // AUTO-DENSITY SCALING: Adapt to data size
+  // Calculate pixels available per candle
+  const pixelsPerCandle = chartWidth / displayData.length
+  
+  // Determine density tier and sizing
+  let candleWidth: number
+  let gapWidth: number
+  let denseLabelInterval: number
+  
+  if (pixelsPerCandle < 2.5) {
+    // DENSE: 90+ candles (daily chart)
+    candleWidth = 1.5
+    gapWidth = 0.8
+    denseLabelInterval = Math.max(1, Math.ceil(displayData.length / 6))  // ~6 labels
+  } else if (pixelsPerCandle < 5) {
+    // MEDIUM: 30-60 candles
+    candleWidth = 3
+    gapWidth = 1.2
+    denseLabelInterval = Math.max(1, Math.ceil(displayData.length / 8))  // ~8 labels
+  } else {
+    // SPARSE: < 30 candles (weekly chart)
+    candleWidth = 5
+    gapWidth = 1.5
+    denseLabelInterval = Math.max(1, Math.ceil(displayData.length / 10))  // ~10 labels
+  }
 
-  // Scale functions
-  const scaleX = (index: number) =>
-    padding.left + (index / Math.max(displayData.length - 1, 1)) * chartWidth
+  // Scale functions - NO rounding to prevent candle collision
+  // Use linear interpolation across available space
+  const scaleX = (index: number) => {
+    if (displayData.length <= 1) return padding.left + chartWidth / 2
+    // Spread candles evenly across available width
+    return padding.left + (index / (displayData.length - 1)) * chartWidth
+  }
+  
   const scaleY = (price: number) =>
     padding.top + ((maxPrice - price) / priceRange) * (chartHeight * 0.75)
+  
   const scaleVolume = (volume: number) =>
     padding.top +
     chartHeight * 0.75 +
@@ -78,10 +110,9 @@ export function CandleChartInteractive({
     })
   }
 
-  // Date labels (X-axis)
-  const labelInterval = Math.ceil(displayData.length / 6)
+  // Date labels (X-axis) - auto-density based
   const dateLabels = []
-  for (let i = 0; i < displayData.length; i += labelInterval) {
+  for (let i = 0; i < displayData.length; i += denseLabelInterval) {
     const dateStr = displayData[i].date
     const date = new Date(dateStr)
     const label = `${date.getDate()}/${String(date.getMonth() + 1).padStart(2, '0')}`
@@ -97,10 +128,12 @@ export function CandleChartInteractive({
     const o = scaleY(candle.open)
     const h = scaleY(candle.high)
     const l = scaleY(candle.low)
-    const c = scaleY(candle.close)
+    // Fallback: use high price if close is NaN/null
+    const closePrice = Number.isFinite(candle.close) ? candle.close : candle.high
+    const c = scaleY(closePrice)
     const volY = scaleVolume(candle.volume)
 
-    const isUp = candle.close >= candle.open
+    const isUp = closePrice >= candle.open
     const candleColor = isUp ? '#10B981' : '#EF4444'
     const volumeColor = isUp ? '#10B98140' : '#EF444440'
     const bodyTop = Math.min(o, c)
@@ -115,7 +148,7 @@ export function CandleChartInteractive({
           height={volY - (padding.top + chartHeight * 0.75)}
           fill={volumeColor}
         />
-        <Line x1={x} y1={h} x2={x} y2={l} stroke={candleColor} strokeWidth="0.8" />
+        <Line x1={x} y1={h} x2={x} y2={l} stroke={candleColor} strokeWidth="0.5" opacity="0.6" />
         <Rect
           x={x - candleWidth / 2}
           y={bodyTop}
@@ -160,20 +193,26 @@ export function CandleChartInteractive({
   const handleChartPress = (event: GestureResponderEvent) => {
     const { locationX } = event.nativeEvent
     
-    // Find which candle was tapped based on X position
+    // Simple: find closest candle center using scaleX positions
     const relativeX = locationX - padding.left
-    const candleIndex = Math.round((relativeX / chartWidth) * (displayData.length - 1))
+    if (relativeX < 0 || relativeX > chartWidth) return
+    
+    // Linear interpolation: which candle index?
+    const rawIndex = (relativeX / chartWidth) * (displayData.length - 1)
+    const candleIndex = Math.round(rawIndex)
     
     if (candleIndex >= 0 && candleIndex < displayData.length) {
       const candle = displayData[candleIndex]
       const x = scaleX(candleIndex)
+      // Fallback: use high price if close is NaN
+      const closePrice = Number.isFinite(candle.close) ? candle.close : candle.high
       
       setSelectedTooltip({
         date: candle.date,
-        close: candle.close,
+        close: closePrice,
         volume: candle.volume,
         x,
-        y: scaleY(candle.close),
+        y: scaleY(closePrice),
       })
     }
   }
@@ -186,6 +225,18 @@ export function CandleChartInteractive({
         onResponderRelease={handleChartPress}
       >
         <Svg width={width} height={height}>
+          {/* Clipping region - prevents candles from rendering outside chart area */}
+          <Defs>
+            <ClipPath id="chartClip">
+              <Rect
+                x={padding.left}
+                y={padding.top}
+                width={chartWidth}
+                height={chartHeight}
+              />
+            </ClipPath>
+          </Defs>
+
           {/* Grid */}
           {priceLabels.map((label, i) => (
             <Line
@@ -254,53 +305,60 @@ export function CandleChartInteractive({
             </SvgText>
           ))}
 
-          {/* Candles */}
-          {candles}
+          {/* Candles & EMAs - CLIPPED to prevent rendering outside chart area */}
+          <G clipPath="url(#chartClip)">
+            {/* Candles */}
+            {candles}
 
-          {/* EMAs */}
-          {emaLines.map(
-            (line) => {
-              const pathStr = emaPath(line.data)
-              return pathStr ? (
-                <Path
-                  key={line.name}
-                  d={pathStr}
-                  stroke={line.color}
-                  strokeWidth="1.5"
-                  fill="none"
-                  opacity="0.8"
-                />
-              ) : null
-            }
-          )}
+            {/* EMAs */}
+            {emaLines.map(
+              (line) => {
+                const pathStr = emaPath(line.data)
+                return pathStr ? (
+                  <Path
+                    key={line.name}
+                    d={pathStr}
+                    stroke={line.color}
+                    strokeWidth="1.5"
+                    fill="none"
+                    opacity="0.8"
+                  />
+                ) : null
+              }
+            )}
+          </G>
 
-          {/* Vertical line on selected candle */}
+          {/* Vertical line on selected candle - YELLOW DASHED */}
           {selectedTooltip && (
-            <Line
-              x1={selectedTooltip.x}
-              y1={padding.top}
-              x2={selectedTooltip.x}
-              y2={padding.top + chartHeight}
-              stroke="#FFA500"
-              strokeWidth="1"
-              opacity="0.6"
-            />
+            <>
+              {/* Yellow dashed line */}
+              <Line
+                x1={selectedTooltip.x}
+                y1={padding.top}
+                x2={selectedTooltip.x}
+                y2={padding.top + chartHeight}
+                stroke="#FFEB3B"
+                strokeWidth="2"
+                strokeDasharray="4,4"
+                opacity="0.9"
+              />
+            </>
           )}
         </Svg>
       </View>
 
       {/* Compact Bottom Tooltip Bar - No overlap! */}
-      {selectedTooltip && (
+      {selectedTooltip && selectedTooltip.close != null && (
         <View style={styles.tooltipBar}>
           <View style={styles.tooltipContent}>
             <Text style={styles.tooltipData}>
               📅 {selectedTooltip.date}
             </Text>
             <Text style={styles.tooltipData}>
-              💰 ₹{selectedTooltip.close.toFixed(2)}
+              💰 ₹{selectedTooltip.close?.toFixed(2) || 'N/A'}
             </Text>
             <Text style={styles.tooltipData}>
-              📊 {(selectedTooltip.volume / 1000000).toFixed(2)}M
+              📊 {((selectedTooltip.volume ?? 0) / 1000000).toFixed(2)}M
             </Text>
           </View>
         </View>

@@ -68,16 +68,30 @@ export function runBacktest(
   let totalTrades = 0
   let totalWins = 0
   let totalLosses = 0
+  console.log(`[🎯 backtestEngine] START endDate=${endDate}, runWeeks=${runWeeks}, symbols=${Object.keys(symbolData).length}`)
+  let filterCount = 0, tradeSymbols = 0
   let totalPnl = 0
 
+  let skippedNoData = 0, skippedLowData = 0, skippedNoFilter = 0, skippedNoTrades = 0
+  
   for (const [symbol, ohlcData] of Object.entries(symbolData)) {
-    if (ohlcData.length < 50) continue
+    if (ohlcData.length < 50) {
+      skippedNoData++
+      continue
+    }
 
     const filtered90Days = filterLast90Days(ohlcData, endDate)
-    if (filtered90Days.length < 20) continue
+    if (filtered90Days.length < 20) {
+      skippedLowData++
+      console.log(`[🎯 backtestEngine] ${symbol}: filtered to ${filtered90Days.length} candles (need 20+), data range: ${ohlcData[0]?.date} to ${ohlcData[ohlcData.length-1]?.date}`)
+      continue
+    }
 
     const trades = simulateTrades(symbol, filtered90Days, riskPercent, minRR)
-    if (trades.length === 0) continue
+    if (trades.length === 0) {
+      skippedNoTrades++
+      continue
+    }
 
     const result = calculateMetrics(symbol, trades)
     results.push(result)
@@ -86,7 +100,10 @@ export function runBacktest(
     totalWins += result.winTrades
     totalLosses += result.lossTrades
     totalPnl += result.totalPnl
+    tradeSymbols++
   }
+  console.log(`[🎯 backtestEngine] Filtering summary: skipped=${skippedNoData}(noData) ${skippedLowData}(lowData) ${skippedNoTrades}(noTrades), found=${tradeSymbols}`)
+  console.log(`[🎯 backtestEngine] COMPLETE symbols=${Object.keys(symbolData).length}, passed=${tradeSymbols}, trades=${totalTrades}`)
 
   const overallWinRate = totalTrades > 0 ? (totalWins / totalTrades) * 100 : 0
   const avgReturn = totalTrades > 0 ? totalPnl / (totalTrades * 100) : 0
@@ -178,10 +195,15 @@ function filterLast90Days(ohlcData: OHLC[], endDate?: string): OHLC[] {
   const targetDate = new Date(targetDateStr + 'T00:00:00Z')
   const startDate = new Date(targetDate)
   startDate.setDate(startDate.getDate() - 90)
+  const startDateStr = formatDateString(startDate)
 
-  return ohlcData.filter((candle) => {
-    return candle.date >= formatDateString(startDate) && candle.date <= targetDateStr
+  const filtered = ohlcData.filter((candle) => {
+    return candle.date >= startDateStr && candle.date <= targetDateStr
   })
+
+  console.log(`[🎯 backtestEngine-filter] endDate=${targetDateStr}, range=${startDateStr} to ${targetDateStr}, input=${ohlcData.length} candles, output=${filtered.length} candles, data spans ${ohlcData[0]?.date} to ${ohlcData[ohlcData.length-1]?.date}`)
+
+  return filtered
 }
 
 function formatDateString(date: Date): string {

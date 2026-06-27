@@ -34,18 +34,24 @@ export function calculateEMA(data: number[], period: number): (number | undefine
 /**
  * Calculate multiple EMAs from close prices
  * Returns full-length arrays with undefined padding at start
+ * Returns object with numeric keys: {10: [...], 21: [...], 50: [...], 200: [...]}
+ * Handles NaN close prices by using high price as fallback
  */
 export function calculateMultipleEMAs(ohlcData: OHLC[], periods: number[] = [10, 21, 50, 200]) {
   if (!ohlcData || ohlcData.length === 0) {
     return {
-      '10': [],
-      '21': [],
-      '50': [],
-      '200': [],
+      10: [],
+      21: [],
+      50: [],
+      200: [],
     }
   }
 
-  const closePrices = ohlcData.map(candle => candle.close)
+  // Use close price, fallback to high if NaN (same as candle chart)
+  const closePrices = ohlcData.map(candle => {
+    const closePrice = Number.isFinite(candle.close) ? candle.close : candle.high
+    return closePrice
+  })
   
   const result: Record<number, (number | undefined)[]> = {}
   periods.forEach(period => {

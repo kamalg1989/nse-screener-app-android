@@ -43,9 +43,9 @@ export function HomeScreen() {
     try {
       logInfo('Screener: Loading data', { source: 'Home' })
       
-      // STEP 1: Fetch real data
+      // STEP 1: Fetch real data (monthly consolidated - 9 months for ~36 weekly candles)
       const fetchStartTime = Date.now()
-      const realData = await fetchAllStockData(DEFAULT_SYMBOLS)
+      const realData = await fetchAllStockData(DEFAULT_SYMBOLS, 9)  // 9 months = ~36 weeks
       timings.fetch = Date.now() - fetchStartTime
       
       const hasRealData = Object.keys(realData).length > 0
@@ -150,13 +150,18 @@ export function HomeScreen() {
   const getEMAForTimeframe = (emaKey: string) => {
     if (!selectedSymbol) return undefined
     
+    // Convert string key ('10', '21', etc) to numeric key
+    const keyNum = parseInt(emaKey) as any
+    
     if (chartTimeframe === 'daily') {
-      return emaCalculations[selectedSymbol]?.[emaKey]
+      return emaCalculations[selectedSymbol]?.[keyNum]
     } else {
       // Calculate EMAs for weekly data
       const weeklyChartData = weeklyData[selectedSymbol] || []
+      if (weeklyChartData.length === 0) return undefined
+      
       const weeklyEmaCals = calculateMultipleEMAs(weeklyChartData)
-      return weeklyEmaCals[emaKey]
+      return weeklyEmaCals[keyNum]
     }
   }
 
